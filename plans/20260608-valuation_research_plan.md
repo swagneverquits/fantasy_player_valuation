@@ -310,7 +310,125 @@ This plan frames a research path for benchmarking public fantasy football player
 </details>
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
 <details open>
-<summary><big><strong>5. 🚧 Build Source Comparison Report</strong></big></summary>
+<summary><big><strong>5. 🚧 Research Access Constraints</strong></big></summary>
+
+<table style="width: 100%; table-layout: fixed;">
+  <colgroup>
+    <col style="width: 2%; white-space: nowrap;">
+    <col style="width: 20%;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 48%;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Subtask</th>
+      <th>Status</th>
+      <th>PR</th>
+      <th>Date Completed</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="white-space: nowrap;">a</td>
+      <td>Review terms</td>
+      <td style="white-space: nowrap;">✅ Done</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">2026-06-10</td>
+      <td>Confirm allowed collection methods.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">b</td>
+      <td>Identify ingestion paths</td>
+      <td style="white-space: nowrap;">✅ Done</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">2026-06-10</td>
+      <td>Prefer APIs, exports, or manual snapshots.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">c</td>
+      <td>Document access limits</td>
+      <td style="white-space: nowrap;">✅ Done</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">2026-06-10</td>
+      <td>Record source-specific caveats.</td>
+    </tr>
+  </tbody>
+</table>
+
+> <details>
+> <summary><strong>Design Notes</strong></summary>
+>
+> RosterAudit can be pulled through a documented public API. KeepTradeCut should be treated more carefully: rankings data is present in public page HTML and robots.txt allows access, but no documented API or terms page was found.
+>
+> </details>
+
+</details>
+<hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
+<details>
+<summary><big><strong>6. 🅿️ Add Source Snapshot Pullers</strong></big></summary>
+
+<table style="width: 100%; table-layout: fixed;">
+  <colgroup>
+    <col style="width: 2%; white-space: nowrap;">
+    <col style="width: 20%;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 48%;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Subtask</th>
+      <th>Status</th>
+      <th>PR</th>
+      <th>Date Completed</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="white-space: nowrap;">a</td>
+      <td>Add KeepTradeCut puller</td>
+      <td style="white-space: nowrap;">🅿️ Not Started</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">-</td>
+      <td>Use the allowed access path identified in work item 5.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">b</td>
+      <td>Add RosterAudit puller</td>
+      <td style="white-space: nowrap;">🅿️ Not Started</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">-</td>
+      <td>Normalize output into the shared snapshot schema.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">c</td>
+      <td>Add snapshot command</td>
+      <td style="white-space: nowrap;">🅿️ Not Started</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">-</td>
+      <td>Write dated CSV snapshots under ignored raw data paths.</td>
+    </tr>
+  </tbody>
+</table>
+
+> <details>
+> <summary><strong>Design Notes</strong></summary>
+>
+> This should come before comparison reports. A report built from toy fixtures is useful for tests, but real source snapshots are what make the research loop worth running.
+>
+> </details>
+
+</details>
+<hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
+<details>
+<summary><big><strong>7. 🅿️ Build Source Comparison Report</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -370,14 +488,14 @@ This plan frames a research path for benchmarking public fantasy football player
 > <details>
 > <summary><strong>Design Notes</strong></summary>
 >
-> This should be the next executable artifact. Keep it deterministic and file-based: read a manual snapshot CSV, generate a comparison table, and avoid introducing a database until repeated snapshots justify it.
+> Keep this deterministic and file-based: read source snapshots, generate a comparison table, and avoid introducing a database until repeated snapshots justify it.
 >
 > </details>
 
 </details>
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
 <details>
-<summary><big><strong>6. 🅿️ Add Outcome Evaluation</strong></big></summary>
+<summary><big><strong>8. 🅿️ Add Outcome Evaluation</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -434,9 +552,10 @@ This plan frames a research path for benchmarking public fantasy football player
 > </details>
 
 </details>
+
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
 <details>
-<summary><big><strong>7. 🅿️ Build Blended Baseline</strong></big></summary>
+<summary><big><strong>9. 🅿️ Build Blended Baseline</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -488,66 +607,7 @@ This plan frames a research path for benchmarking public fantasy football player
 > <details>
 > <summary><strong>Design Notes</strong></summary>
 >
-> A transparent blend should come before heavier models. If a simple blend is not useful, a more complex model probably needs better labels rather than more machinery.
->
-> </details>
-
-</details>
-<hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
-<details>
-<summary><big><strong>8. 🅿️ Research Access Constraints</strong></big></summary>
-
-<table style="width: 100%; table-layout: fixed;">
-  <colgroup>
-    <col style="width: 2%; white-space: nowrap;">
-    <col style="width: 20%;">
-    <col style="width: 10%; white-space: nowrap;">
-    <col style="width: 10%; white-space: nowrap;">
-    <col style="width: 10%; white-space: nowrap;">
-    <col style="width: 48%;">
-  </colgroup>
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Subtask</th>
-      <th>Status</th>
-      <th>PR</th>
-      <th>Date Completed</th>
-      <th>Notes</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td style="white-space: nowrap;">a</td>
-      <td>Review terms</td>
-      <td style="white-space: nowrap;">🅿️ Not Started</td>
-      <td style="white-space: nowrap;">-</td>
-      <td style="white-space: nowrap;">-</td>
-      <td>Confirm allowed collection methods.</td>
-    </tr>
-    <tr>
-      <td style="white-space: nowrap;">b</td>
-      <td>Identify ingestion paths</td>
-      <td style="white-space: nowrap;">🅿️ Not Started</td>
-      <td style="white-space: nowrap;">-</td>
-      <td style="white-space: nowrap;">-</td>
-      <td>Prefer APIs, exports, or manual snapshots.</td>
-    </tr>
-    <tr>
-      <td style="white-space: nowrap;">c</td>
-      <td>Document access limits</td>
-      <td style="white-space: nowrap;">🅿️ Not Started</td>
-      <td style="white-space: nowrap;">-</td>
-      <td style="white-space: nowrap;">-</td>
-      <td>Record source-specific caveats.</td>
-    </tr>
-  </tbody>
-</table>
-
-> <details>
-> <summary><strong>Design Notes</strong></summary>
->
-> Automated collection should follow each source's allowed access paths. Until that is clear, manual snapshots are the safest way to keep research moving.
+> A transparent blend should come after real source snapshots and the first comparison report. If a simple blend is not useful, a more complex model probably needs better labels rather than more machinery.
 >
 > </details>
 
@@ -569,6 +629,19 @@ This plan frames a research path for benchmarking public fantasy football player
 <hr style="height: 3px; background: rgba(160, 160, 160, 0.35); border: 0; margin: 0.25rem 0;">
 <details>
 <summary><big><big><big><strong>Appendix A - Research Details</strong></big></big></big></summary>
+
+<details>
+<summary><strong>Access Findings</strong></summary>
+
+- RosterAudit has a documented public JSON API at <a href="https://rosteraudit.com/developers/">https://rosteraudit.com/developers/</a>.
+- RosterAudit's API documentation says the rankings endpoint supports Superflex format, position filters, pagination, sorting, age filters, league size, and search.
+- RosterAudit terms at <a href="https://rosteraudit.com/terms/">https://rosteraudit.com/terms/</a> allow personal and non-commercial API use, require attribution for public display, and set rate limits.
+- RosterAudit also offers a lightweight all-player value endpoint at <code>/wp-json/ra/v1/rankings/values?format_key=sf_ppr</code>.
+- KeepTradeCut robots.txt at <a href="https://keeptradecut.com/robots.txt">https://keeptradecut.com/robots.txt</a> allows crawling generally and publishes a sitemap.
+- KeepTradeCut's public dynasty rankings page at <a href="https://keeptradecut.com/dynasty-rankings">https://keeptradecut.com/dynasty-rankings</a> embeds player valuation data in page HTML.
+- No KeepTradeCut public API docs or terms page were found during this pass; use conservative, low-frequency snapshot pulls unless a documented API or written permission is found.
+
+</details>
 
 <details>
 <summary><strong>League Scope</strong></summary>
