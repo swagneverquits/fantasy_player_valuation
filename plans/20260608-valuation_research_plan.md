@@ -98,11 +98,11 @@ This plan frames a research path for benchmarking public fantasy football player
     </tr>
     <tr>
       <td style="white-space: nowrap;">d</td>
-      <td>Add README and tests</td>
+      <td>Add README</td>
       <td style="white-space: nowrap;">✅ Done</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">2026-06-08</td>
-      <td>README and lightweight tests are in place.</td>
+      <td>README is in place.</td>
     </tr>
   </tbody>
 </table>
@@ -292,10 +292,10 @@ This plan frames a research path for benchmarking public fantasy football player
     <tr>
       <td style="white-space: nowrap;">c</td>
       <td>Add sample fixture</td>
-      <td style="white-space: nowrap;">✅ Done</td>
+      <td style="white-space: nowrap;">⏸️ Paused</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">2026-06-08</td>
-      <td>Sample fixture exists at <code>tests/fixtures/manual_snapshot.csv</code>.</td>
+      <td>Test fixtures were removed; use raw snapshot outputs for manual validation.</td>
     </tr>
   </tbody>
 </table>
@@ -309,8 +309,8 @@ This plan frames a research path for benchmarking public fantasy football player
 
 </details>
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
-<details open>
-<summary><big><strong>5. 🚧 Research Access Constraints</strong></big></summary>
+<details>
+<summary><big><strong>5. ✅ Research Access Constraints</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -369,7 +369,74 @@ This plan frames a research path for benchmarking public fantasy football player
 </details>
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
 <details>
-<summary><big><strong>6. 🅿️ Add Source Snapshot Pullers</strong></big></summary>
+<summary><big><strong>6. ✅ Add RosterAudit Ingestion</strong></big></summary>
+
+<table style="width: 100%; table-layout: fixed;">
+  <colgroup>
+    <col style="width: 2%; white-space: nowrap;">
+    <col style="width: 20%;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 10%; white-space: nowrap;">
+    <col style="width: 48%;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Subtask</th>
+      <th>Status</th>
+      <th>PR</th>
+      <th>Date Completed</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="white-space: nowrap;">a</td>
+      <td>Add RosterAudit puller</td>
+      <td style="white-space: nowrap;">✅ Done</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">2026-06-10</td>
+      <td>Normalize output into the shared snapshot schema.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">b</td>
+      <td>Add RosterAudit value history</td>
+      <td style="white-space: nowrap;">✅ Done</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">2026-06-10</td>
+      <td>Added <code>ffvaluation pull-rosteraudit-history</code>; rows are keyed by <code>as_of_date</code> and <code>player_id</code>.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">c</td>
+      <td>Add snapshot command</td>
+      <td style="white-space: nowrap;">✅ Done</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">2026-06-10</td>
+      <td>Added <code>ffvaluation pull-rosteraudit</code> for dated raw CSV snapshots.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">d</td>
+      <td>Automate daily pulls</td>
+      <td style="white-space: nowrap;">🅿️ Not Started</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">-</td>
+      <td>Run rankings and value-history pulls once per day after the manual command shape settles.</td>
+    </tr>
+  </tbody>
+</table>
+
+> <details>
+> <summary><strong>Design Notes</strong></summary>
+>
+> RosterAudit now supports both current rankings snapshots and API-key value-history pulls. Daily automation can wait until the manual command shape settles.
+>
+> </details>
+
+</details>
+<hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
+<details>
+<summary><big><strong>7. 🅿️ Add KeepTradeCut Ingestion</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -397,23 +464,23 @@ This plan frames a research path for benchmarking public fantasy football player
       <td style="white-space: nowrap;">🅿️ Not Started</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">-</td>
-      <td>Use the allowed access path identified in work item 5.</td>
+      <td>Use conservative HTML-backed access unless a documented API appears.</td>
     </tr>
     <tr>
       <td style="white-space: nowrap;">b</td>
-      <td>Add RosterAudit puller</td>
-      <td style="white-space: nowrap;">🅿️ Not Started</td>
-      <td style="white-space: nowrap;">-</td>
-      <td style="white-space: nowrap;">-</td>
-      <td>Normalize output into the shared snapshot schema.</td>
-    </tr>
-    <tr>
-      <td style="white-space: nowrap;">c</td>
       <td>Add snapshot command</td>
       <td style="white-space: nowrap;">🅿️ Not Started</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">-</td>
-      <td>Write dated CSV snapshots under ignored raw data paths.</td>
+      <td>Write dated KeepTradeCut CSV snapshots under ignored raw data paths.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">c</td>
+      <td>Document caveats</td>
+      <td style="white-space: nowrap;">🅿️ Not Started</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">-</td>
+      <td>Record that KeepTradeCut has public page data but no found public API or terms page.</td>
     </tr>
   </tbody>
 </table>
@@ -421,14 +488,14 @@ This plan frames a research path for benchmarking public fantasy football player
 > <details>
 > <summary><strong>Design Notes</strong></summary>
 >
-> This should come before comparison reports. A report built from toy fixtures is useful for tests, but real source snapshots are what make the research loop worth running.
+> KeepTradeCut should remain separate from RosterAudit because its access path, data shape, and permission risk are different. Keep requests low-frequency and avoid treating embedded page data as a documented API.
 >
 > </details>
 
 </details>
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
 <details>
-<summary><big><strong>7. 🅿️ Build Source Comparison Report</strong></big></summary>
+<summary><big><strong>8. 🅿️ Build Source Comparison Report</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -495,7 +562,7 @@ This plan frames a research path for benchmarking public fantasy football player
 </details>
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
 <details>
-<summary><big><strong>8. 🅿️ Add Outcome Evaluation</strong></big></summary>
+<summary><big><strong>9. 🅿️ Add Outcome Evaluation</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -555,7 +622,7 @@ This plan frames a research path for benchmarking public fantasy football player
 
 <hr style="height: 1px; background: rgba(160, 160, 160, 0.25); border: 0; margin: 0.25rem 0;">
 <details>
-<summary><big><strong>9. 🅿️ Build Blended Baseline</strong></big></summary>
+<summary><big><strong>10. 🅿️ Build Blended Baseline</strong></big></summary>
 
 <table style="width: 100%; table-layout: fixed;">
   <colgroup>
@@ -637,6 +704,14 @@ This plan frames a research path for benchmarking public fantasy football player
 - RosterAudit's API documentation says the rankings endpoint supports Superflex format, position filters, pagination, sorting, age filters, league size, and search.
 - RosterAudit terms at <a href="https://rosteraudit.com/terms/">https://rosteraudit.com/terms/</a> allow personal and non-commercial API use, require attribution for public display, and set rate limits.
 - RosterAudit also offers a lightweight all-player value endpoint at <code>/wp-json/ra/v1/rankings/values?format_key=sf_ppr</code>.
+- RosterAudit's API-key player-page endpoint exposes <code>value_history</code>; sampled players all returned 40 entries from <code>2026-03-15</code> through <code>2026-06-10</code>.
+- Recheck the earliest RosterAudit <code>value_history</code> date on <code>2026-06-11</code>. If it remains <code>2026-03-15</code>, the history may be fixed/accumulating rather than a rolling window.
+- Store RosterAudit historical value observations keyed by <code>as_of_date</code> and <code>player_id</code>; reruns should overwrite matching keys rather than append duplicates.
+- Treat RosterAudit value history as a slow backfill/recovery pull, not the normal daily path; default to conservative pacing and write after each player so interruptions preserve progress.
+- Save daily RosterAudit rankings to <code>data/raw/rosteraudit/rankings/YYYYMMDD.csv</code>.
+- Upsert daily RosterAudit rankings into <code>data/raw/rosteraudit/rankings/history.csv</code>, keyed by <code>source</code>, <code>as_of_date</code>, and <code>player_id</code>.
+- Save daily RosterAudit value history to <code>data/raw/rosteraudit/value_history/YYYYMMDD.csv</code>.
+- Keep smoke runs, debug exports, and partial samples under <code>data/scratch/rosteraudit/</code>.
 - KeepTradeCut robots.txt at <a href="https://keeptradecut.com/robots.txt">https://keeptradecut.com/robots.txt</a> allows crawling generally and publishes a sitemap.
 - KeepTradeCut's public dynasty rankings page at <a href="https://keeptradecut.com/dynasty-rankings">https://keeptradecut.com/dynasty-rankings</a> embeds player valuation data in page HTML.
 - No KeepTradeCut public API docs or terms page were found during this pass; use conservative, low-frequency snapshot pulls unless a documented API or written permission is found.

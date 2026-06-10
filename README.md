@@ -50,12 +50,20 @@ cd C:\dev\fantasy_player_valuation
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest
+ffvaluation sources
 ```
 
 ## Project Layout
 
 ```text
+data/
+  raw/
+    rosteraudit/
+      rankings/
+        history.csv
+      value_history/
+  scratch/
+    rosteraudit/
 plans/
   20260608-valuation_research_plan.md
 src/ffvaluation/
@@ -66,8 +74,33 @@ src/ffvaluation/
     registry.py
   evaluation/
     metrics.py
-tests/
-  fixtures/
-    manual_snapshot.csv
-  test_metrics.py
+```
+
+Canonical source pulls go under `data/raw/<source>/<dataset>/YYYYMMDD.csv`.
+Ad hoc smoke runs, debug exports, and partial samples go under `data/scratch/<source>/`.
+
+RosterAudit current rankings are the normal daily pull:
+
+```powershell
+ffvaluation pull-rosteraudit
+```
+
+That writes a dated raw snapshot and upserts the same rows into:
+
+```text
+data/raw/rosteraudit/rankings/history.csv
+```
+
+RosterAudit value history is a slow backfill/recovery pull. By default it waits
+5 seconds between player-page calls to avoid rate limits, writes after each
+player, and can resume if a run is interrupted:
+
+```powershell
+ffvaluation pull-rosteraudit-history
+```
+
+If you need a different pace, override the delay:
+
+```powershell
+ffvaluation pull-rosteraudit-history --sleep-seconds 8
 ```
