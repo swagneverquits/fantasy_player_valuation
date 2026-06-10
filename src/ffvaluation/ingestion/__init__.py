@@ -1,0 +1,2 @@
+"""Manual snapshot ingestion."""
+

@@ -1,0 +1,73 @@
+# Fantasy Player Valuation
+
+Research tools for evaluating fantasy football player trade values and building better valuation models.
+
+The project starts from two questions:
+
+1. Which public valuation sources are actually good?
+2. Can we improve on them with a transparent ensemble that accounts for format, scoring, market behavior, and future production?
+
+## Scope
+
+This project is about player valuation for trades in 12-team superflex PPR leagues. It is not a lineup optimizer. The first milestone is a reproducible research pipeline that compares public values against realized outcomes.
+
+Default league assumptions:
+
+- 12 teams.
+- Superflex.
+- Full PPR scoring: 1 point per reception.
+- 4-point passing touchdowns.
+- No tight end premium.
+- Otherwise common/default fantasy scoring assumptions, not zero-PPR "standard scoring."
+
+## Candidate Sources
+
+Initial source universe:
+
+- KeepTradeCut: crowdsourced keep/trade/cut rankings and values.
+- RosterAudit: rankings and trade tools derived from real Sleeper trade data.
+
+We can add other sources later, but the first research pass should stay narrow. KeepTradeCut and RosterAudit are useful together because they represent two different market lenses: stated crowd preference versus observed trade behavior.
+
+Some sources may not have public APIs or may restrict scraping. The source registry should record access method and terms before ingestion.
+
+## Research Direction
+
+Public trade-value sites are measuring different things:
+
+- Market price: what managers are currently willing to pay.
+- Expert projection: what analysts think players should be worth.
+- Production value: expected future fantasy points above replacement.
+- Dynasty asset value: production plus age, insulation, role security, and liquidity.
+- Trade utility: value conditional on roster needs, playoff window, and replacement level within the project league format.
+
+A better system likely combines all of these instead of trying to find one universal chart.
+
+## Quick Start
+
+```powershell
+cd C:\dev\fantasy_player_valuation
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+pytest
+```
+
+## Project Layout
+
+```text
+plans/
+  20260608-valuation_research_plan.md
+src/ffvaluation/
+  models.py
+  ingestion/
+    snapshots.py
+  sources/
+    registry.py
+  evaluation/
+    metrics.py
+tests/
+  fixtures/
+    manual_snapshot.csv
+  test_metrics.py
+```
