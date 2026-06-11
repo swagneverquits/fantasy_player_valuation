@@ -72,12 +72,15 @@ src/ffvaluation/
     snapshots.py
   sources/
     registry.py
+    rosteraudit/
+      client.py
   evaluation/
     metrics.py
 ```
 
 Canonical source pulls go under `data/raw/<source>/<dataset>/YYYYMMDD.csv`.
 Ad hoc smoke runs, debug exports, and partial samples go under `data/scratch/<source>/`.
+Source-specific collectors and helpers live under `src/ffvaluation/sources/<source>/`.
 
 RosterAudit current rankings are the normal daily pull:
 
