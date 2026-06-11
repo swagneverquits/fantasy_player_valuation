@@ -74,22 +74,30 @@ This plan frames a research path for constructing player value scores directly f
   <tbody>
     <tr>
       <td style="white-space: nowrap;">a</td>
+      <td>Lock league format</td>
+      <td style="white-space: nowrap;">🅿️ Not Started</td>
+      <td style="white-space: nowrap;">-</td>
+      <td style="white-space: nowrap;">-</td>
+      <td>Restrict the initial dataset to 12-team dynasty PPR superflex leagues with no tight end premium.</td>
+    </tr>
+    <tr>
+      <td style="white-space: nowrap;">b</td>
       <td>Identify trade source</td>
       <td style="white-space: nowrap;">🅿️ Not Started</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">-</td>
-      <td>Decide whether to start with personal leagues, public Sleeper leagues, or exported RosterAudit trade data if available.</td>
+      <td>Find leagues or exports where the target format can be verified before pulling trades.</td>
     </tr>
     <tr>
-      <td style="white-space: nowrap;">b</td>
+      <td style="white-space: nowrap;">c</td>
       <td>Define raw schema</td>
       <td style="white-space: nowrap;">🅿️ Not Started</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">-</td>
-      <td>Capture trade ID, league ID, timestamp, season, roster IDs, assets sent, assets received, and metadata needed for reproducibility.</td>
+      <td>Capture trade ID, league ID, timestamp, season, roster IDs, assets sent, assets received, and league settings proving the target format.</td>
     </tr>
     <tr>
-      <td style="white-space: nowrap;">c</td>
+      <td style="white-space: nowrap;">d</td>
       <td>Normalize assets</td>
       <td style="white-space: nowrap;">🅿️ Not Started</td>
       <td style="white-space: nowrap;">-</td>
@@ -102,7 +110,7 @@ This plan frames a research path for constructing player value scores directly f
 > <details>
 > <summary><strong>Design Notes</strong></summary>
 >
-> The first useful dataset does not need every Sleeper trade on earth. It needs enough clean, auditable trades in the target format to test whether inferred values are coherent.
+> The first useful dataset does not need every Sleeper trade on earth. It needs enough clean, auditable trades from 12-team dynasty PPR superflex leagues with no tight end premium to test whether inferred values are coherent.
 >
 > </details>
 
@@ -352,7 +360,7 @@ This plan frames a research path for constructing player value scores directly f
 <summary><big><big><big><strong>Open Questions</strong></big></big></big></summary>
 
 - Which Sleeper leagues are acceptable to use for initial trade data?
-- Do we model only 12-team superflex PPR leagues first, or include nearby formats with adjustment features?
+- How strict should the first-pass filter be for ambiguous league settings that look like 12-team dynasty PPR superflex but do not clearly expose every scoring rule?
 - How should accepted trades be interpreted: balanced market prices, one-sided wins, or revealed preferences from both managers?
 - How should we handle future rookie picks before the draft order is known?
 - What minimum observation count should an asset need before its learned value can move far from the prior?
