@@ -74,6 +74,8 @@ src/ffvaluation/
     registry.py
     rosteraudit/
       client.py
+    sleeper/
+      client.py
   evaluation/
     metrics.py
 ```
