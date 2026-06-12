@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 BASE_URL = "https://api.sleeper.app/v1"
 
 FetchJson = Callable[[str], Any]
+DiscoveryProgressCallback = Callable[[int, int, int, int], None]
 
 TRADE_HISTORY_COLUMNS = [
     "captured_at",
@@ -160,11 +161,12 @@ def discover_league_network(
     *,
     seed_user: str,
     seasons: Iterable[str],
-    max_depth: int = 1,
-    max_users: int = 100,
-    max_leagues: int = 500,
+    max_depth: int = 2,
+    max_users: int = 1000,
+    max_leagues: int = 5000,
     captured_at: datetime | None = None,
     sleep_seconds: float = 0.1,
+    progress_callback: DiscoveryProgressCallback | None = None,
     fetch_json: FetchJson | None = None,
 ) -> SleeperDiscoveryResult:
     captured_at = captured_at or datetime.now(UTC)
@@ -221,6 +223,14 @@ def discover_league_network(
 
             if len(leagues_by_id) >= max_leagues:
                 break
+
+        if progress_callback:
+            progress_callback(
+                len(seen_user_ids),
+                len(leagues_by_id),
+                len(league_users_by_key),
+                len(queue),
+            )
 
     return SleeperDiscoveryResult(
         users=sorted(users_by_id.values(), key=lambda row: row.user_id),

@@ -229,17 +229,17 @@ def discover_sleeper_network(
         help="NFL league season to inspect. Repeat for multiple seasons.",
     ),
     max_depth: int = typer.Option(
-        1,
+        2,
         "--max-depth",
-        help="User graph depth. 1 means seed user plus users from seed user's leagues.",
+        help="User graph depth. 2 branches from the seed through leaguemates' leagues.",
     ),
     max_users: int = typer.Option(
-        100,
+        1000,
         "--max-users",
         help="Maximum users to resolve.",
     ),
     max_leagues: int = typer.Option(
-        500,
+        5000,
         "--max-leagues",
         help="Maximum leagues to discover.",
     ),
@@ -253,6 +253,11 @@ def discover_sleeper_network(
         "--sleep-seconds",
         help="Delay between Sleeper discovery calls.",
     ),
+    progress_every: int = typer.Option(
+        25,
+        "--progress-every",
+        help="Print discovery progress every N resolved users. Use 0 to disable.",
+    ),
 ) -> None:
     """Discover Sleeper users and leagues from a seed user."""
 
@@ -265,6 +270,7 @@ def discover_sleeper_network(
         max_leagues=max_leagues,
         captured_at=captured_at,
         sleep_seconds=sleep_seconds,
+        progress_callback=_discovery_progress_printer(progress_every),
     )
     users_path = output_dir / "users_history.csv"
     leagues_path = output_dir / "leagues_history.csv"
@@ -281,6 +287,21 @@ def discover_sleeper_network(
         f"({target_leagues} target-format league guesses)"
     )
     console.print(f"Wrote {users_path}, {leagues_path}, and {league_users_path}")
+
+
+def _discovery_progress_printer(every: int):
+    if every <= 0:
+        return None
+
+    def print_progress(users: int, leagues: int, league_users: int, queued_users: int) -> None:
+        if users == 1 or users % every == 0:
+            console.print(
+                "Sleeper discovery: "
+                f"{users} users, {leagues} leagues, {league_users} league-user edges, "
+                f"{queued_users} queued"
+            )
+
+    return print_progress
 
 
 def _load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
