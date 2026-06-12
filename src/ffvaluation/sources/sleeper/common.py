@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import time
+import uuid
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -71,7 +74,7 @@ def upsert_csv(
         key = tuple(row[field] for field in key_fields)
         merged_rows[key] = {field: row.get(field, "") for field in fieldnames}
 
-    temp_path = path.with_name(f"{path.name}.tmp")
+    temp_path = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     with temp_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
@@ -82,9 +85,24 @@ def upsert_csv(
                 key=lambda item: tuple(item[1][field] for field in sort_fields),
             )
         )
-    temp_path.replace(path)
+    _replace_with_retry(temp_path, path)
 
     return path
+
+
+def _replace_with_retry(source: Path, target: Path, *, attempts: int = 10) -> None:
+    for attempt in range(attempts):
+        try:
+            source.replace(target)
+            return
+        except PermissionError as error:
+            if attempt == attempts - 1:
+                raise PermissionError(
+                    f"Could not replace {target}. Close any program reading it "
+                    "or stop other discovery runs, then retry. "
+                    f"Completed temp file remains at {source}."
+                ) from error
+            time.sleep(0.5 * (attempt + 1))
 
 
 def millis_to_datetime(value: Any) -> datetime | None:
