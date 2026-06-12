@@ -44,6 +44,39 @@ TRADE_HISTORY_COLUMNS = [
     "scoring_settings",
     "roster_positions",
 ]
+USER_DISCOVERY_COLUMNS = [
+    "captured_at",
+    "user_id",
+    "username",
+    "display_name",
+    "avatar",
+]
+LEAGUE_DISCOVERY_COLUMNS = [
+    "captured_at",
+    "league_id",
+    "league_name",
+    "league_season",
+    "previous_league_id",
+    "total_rosters",
+    "is_dynasty",
+    "is_superflex",
+    "ppr",
+    "te_premium",
+    "target_format_guess",
+    "league_settings",
+    "scoring_settings",
+    "roster_positions",
+]
+LEAGUE_USER_DISCOVERY_COLUMNS = [
+    "captured_at",
+    "league_id",
+    "league_season",
+    "user_id",
+    "username",
+    "display_name",
+    "is_owner",
+    "metadata",
+]
 
 
 @dataclass(frozen=True)
@@ -75,6 +108,161 @@ class SleeperTradeRow:
     league_settings: dict[str, Any]
     scoring_settings: dict[str, Any]
     roster_positions: list[str]
+
+
+@dataclass(frozen=True)
+class SleeperUserRow:
+    captured_at: datetime
+    user_id: str
+    username: str
+    display_name: str
+    avatar: str | None
+
+
+@dataclass(frozen=True)
+class SleeperLeagueRow:
+    captured_at: datetime
+    league_id: str
+    league_name: str
+    league_season: str
+    previous_league_id: str | None
+    total_rosters: int | None
+    is_dynasty: bool | None
+    is_superflex: bool
+    ppr: float | None
+    te_premium: float
+    target_format_guess: bool
+    league_settings: dict[str, Any]
+    scoring_settings: dict[str, Any]
+    roster_positions: list[str]
+
+
+@dataclass(frozen=True)
+class SleeperLeagueUserRow:
+    captured_at: datetime
+    league_id: str
+    league_season: str
+    user_id: str
+    username: str
+    display_name: str
+    is_owner: bool | None
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SleeperDiscoveryResult:
+    users: list[SleeperUserRow]
+    leagues: list[SleeperLeagueRow]
+    league_users: list[SleeperLeagueUserRow]
+
+
+def discover_league_network(
+    *,
+    seed_user: str,
+    seasons: Iterable[str],
+    max_depth: int = 1,
+    max_users: int = 100,
+    max_leagues: int = 500,
+    captured_at: datetime | None = None,
+    sleep_seconds: float = 0.1,
+    fetch_json: FetchJson | None = None,
+) -> SleeperDiscoveryResult:
+    captured_at = captured_at or datetime.now(UTC)
+    fetch_json = fetch_json or _fetch_json
+    users_by_id: dict[str, SleeperUserRow] = {}
+    leagues_by_id: dict[str, SleeperLeagueRow] = {}
+    league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
+    queue: list[tuple[str, int]] = [(seed_user, 0)]
+    seen_user_ids: set[str] = set()
+    seen_user_refs: set[str] = set()
+    fetched_league_users: set[str] = set()
+    seasons = [str(season) for season in seasons]
+
+    while queue and len(seen_user_ids) < max_users and len(leagues_by_id) < max_leagues:
+        user_ref, depth = queue.pop(0)
+        if user_ref in seen_user_refs or user_ref in seen_user_ids:
+            continue
+        seen_user_refs.add(user_ref)
+
+        user = fetch_json(_user_url(user_ref))
+        user_id = str(user["user_id"])
+        if user_id in seen_user_ids:
+            continue
+        seen_user_ids.add(user_id)
+        users_by_id[user_id] = _user_row(captured_at=captured_at, user=user)
+
+        for season in seasons:
+            leagues = fetch_json(_user_leagues_url(user_id=user_id, season=season))
+            if sleep_seconds > 0:
+                time.sleep(sleep_seconds)
+
+            for league in leagues:
+                league_id = str(league["league_id"])
+                leagues_by_id[league_id] = _league_row(captured_at=captured_at, league=league)
+                if len(leagues_by_id) >= max_leagues:
+                    break
+
+                if league_id in fetched_league_users:
+                    continue
+                fetched_league_users.add(league_id)
+                league_users = fetch_json(_league_users_url(league_id))
+                if sleep_seconds > 0:
+                    time.sleep(sleep_seconds)
+
+                for league_user in league_users:
+                    league_user_id = str(league_user["user_id"])
+                    league_users_by_key[(league_id, league_user_id)] = _league_user_row(
+                        captured_at=captured_at,
+                        league=league,
+                        user=league_user,
+                    )
+                    if depth < max_depth and len(seen_user_ids) + len(queue) < max_users:
+                        queue.append((league_user_id, depth + 1))
+
+            if len(leagues_by_id) >= max_leagues:
+                break
+
+    return SleeperDiscoveryResult(
+        users=sorted(users_by_id.values(), key=lambda row: row.user_id),
+        leagues=sorted(leagues_by_id.values(), key=lambda row: (row.league_season, row.league_id)),
+        league_users=sorted(
+            league_users_by_key.values(),
+            key=lambda row: (row.league_season, row.league_id, row.user_id),
+        ),
+    )
+
+
+def upsert_user_discovery_csv(rows: list[SleeperUserRow], path: str | Path) -> Path:
+    return _upsert_csv(
+        rows=(_format_user_row(row) for row in rows),
+        path=path,
+        fieldnames=USER_DISCOVERY_COLUMNS,
+        key_fields=("user_id",),
+        sort_fields=("user_id",),
+    )
+
+
+def upsert_league_discovery_csv(rows: list[SleeperLeagueRow], path: str | Path) -> Path:
+    return _upsert_csv(
+        rows=(_format_league_row(row) for row in rows),
+        path=path,
+        fieldnames=LEAGUE_DISCOVERY_COLUMNS,
+        key_fields=("league_id",),
+        sort_fields=("league_season", "league_id"),
+    )
+
+
+def upsert_league_user_discovery_csv(
+    rows: list[SleeperLeagueUserRow],
+    path: str | Path,
+) -> Path:
+    return _upsert_csv(
+        rows=(_format_league_user_row(row) for row in rows),
+        path=path,
+        fieldnames=LEAGUE_USER_DISCOVERY_COLUMNS,
+        key_fields=("league_id", "user_id"),
+        sort_fields=("league_season", "league_id", "user_id"),
+    )
 
 
 def fetch_trade_history(
@@ -176,6 +364,44 @@ def upsert_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> P
     return path
 
 
+def _upsert_csv(
+    *,
+    rows: Iterable[dict[str, str]],
+    path: str | Path,
+    fieldnames: list[str],
+    key_fields: tuple[str, ...],
+    sort_fields: tuple[str, ...],
+) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    merged_rows: dict[tuple[str, ...], dict[str, str]] = {}
+
+    if path.exists():
+        with path.open(newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                key = tuple(row.get(field, "") for field in key_fields)
+                if all(key):
+                    merged_rows[key] = {field: row.get(field, "") for field in fieldnames}
+
+    for row in rows:
+        key = tuple(row[field] for field in key_fields)
+        merged_rows[key] = {field: row.get(field, "") for field in fieldnames}
+
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(
+            row
+            for _key, row in sorted(
+                merged_rows.items(),
+                key=lambda item: tuple(item[1][field] for field in sort_fields),
+            )
+        )
+
+    return path
+
+
 def _iter_league_chain(
     *,
     league_id: str,
@@ -256,6 +482,110 @@ def _trade_row(
     )
 
 
+def _user_row(*, captured_at: datetime, user: dict[str, Any]) -> SleeperUserRow:
+    return SleeperUserRow(
+        captured_at=captured_at,
+        user_id=str(user["user_id"]),
+        username=str(user.get("username") or ""),
+        display_name=str(user.get("display_name") or ""),
+        avatar=_optional_str(user.get("avatar")),
+    )
+
+
+def _league_row(*, captured_at: datetime, league: dict[str, Any]) -> SleeperLeagueRow:
+    scoring_settings = league.get("scoring_settings") or {}
+    league_settings = league.get("settings") or {}
+    roster_positions = [str(position) for position in league.get("roster_positions") or []]
+    ppr = _optional_float(scoring_settings.get("rec"))
+    te_premium = _te_premium(scoring_settings, ppr)
+    is_superflex = "SUPER_FLEX" in roster_positions
+    total_rosters = _optional_int(league.get("total_rosters"))
+    is_dynasty = _is_dynasty(league)
+
+    return SleeperLeagueRow(
+        captured_at=captured_at,
+        league_id=str(league["league_id"]),
+        league_name=str(league.get("name") or ""),
+        league_season=str(league.get("season") or ""),
+        previous_league_id=_optional_str(league.get("previous_league_id")),
+        total_rosters=total_rosters,
+        is_dynasty=is_dynasty,
+        is_superflex=is_superflex,
+        ppr=ppr,
+        te_premium=te_premium,
+        target_format_guess=(
+            total_rosters == 12
+            and is_dynasty is True
+            and is_superflex
+            and ppr == 1.0
+            and te_premium == 0.0
+        ),
+        league_settings=league_settings,
+        scoring_settings=scoring_settings,
+        roster_positions=roster_positions,
+    )
+
+
+def _league_user_row(
+    *,
+    captured_at: datetime,
+    league: dict[str, Any],
+    user: dict[str, Any],
+) -> SleeperLeagueUserRow:
+    return SleeperLeagueUserRow(
+        captured_at=captured_at,
+        league_id=str(league["league_id"]),
+        league_season=str(league.get("season") or ""),
+        user_id=str(user["user_id"]),
+        username=str(user.get("username") or ""),
+        display_name=str(user.get("display_name") or ""),
+        is_owner=user.get("is_owner"),
+        metadata=user.get("metadata") or {},
+    )
+
+
+def _format_user_row(row: SleeperUserRow) -> dict[str, str]:
+    return {
+        "captured_at": row.captured_at.isoformat(),
+        "user_id": row.user_id,
+        "username": row.username,
+        "display_name": row.display_name,
+        "avatar": row.avatar or "",
+    }
+
+
+def _format_league_row(row: SleeperLeagueRow) -> dict[str, str]:
+    return {
+        "captured_at": row.captured_at.isoformat(),
+        "league_id": row.league_id,
+        "league_name": row.league_name,
+        "league_season": row.league_season,
+        "previous_league_id": row.previous_league_id or "",
+        "total_rosters": "" if row.total_rosters is None else str(row.total_rosters),
+        "is_dynasty": _optional_bool(row.is_dynasty),
+        "is_superflex": str(row.is_superflex).lower(),
+        "ppr": "" if row.ppr is None else f"{row.ppr:g}",
+        "te_premium": f"{row.te_premium:g}",
+        "target_format_guess": str(row.target_format_guess).lower(),
+        "league_settings": _json(row.league_settings),
+        "scoring_settings": _json(row.scoring_settings),
+        "roster_positions": _json(row.roster_positions),
+    }
+
+
+def _format_league_user_row(row: SleeperLeagueUserRow) -> dict[str, str]:
+    return {
+        "captured_at": row.captured_at.isoformat(),
+        "league_id": row.league_id,
+        "league_season": row.league_season,
+        "user_id": row.user_id,
+        "username": row.username,
+        "display_name": row.display_name,
+        "is_owner": _optional_bool(row.is_owner),
+        "metadata": _json(row.metadata),
+    }
+
+
 def _format_trade_row(row: SleeperTradeRow) -> dict[str, str]:
     return {
         "captured_at": row.captured_at.isoformat(),
@@ -292,6 +622,18 @@ def _format_trade_row(row: SleeperTradeRow) -> dict[str, str]:
 
 def _league_url(league_id: str) -> str:
     return f"{BASE_URL}/league/{league_id}"
+
+
+def _user_url(user_ref: str) -> str:
+    return f"{BASE_URL}/user/{user_ref}"
+
+
+def _user_leagues_url(*, user_id: str, season: str) -> str:
+    return f"{BASE_URL}/user/{user_id}/leagues/nfl/{season}"
+
+
+def _league_users_url(league_id: str) -> str:
+    return f"{BASE_URL}/league/{league_id}/users"
 
 
 def _transactions_url(league_id: str, round_number: int) -> str:

@@ -63,6 +63,10 @@ data/
         history.csv
       value_history/
     sleeper/
+      discovery/
+        users_history.csv
+        leagues_history.csv
+        league_users_history.csv
       trades/
         history.csv
   scratch/
@@ -128,4 +132,18 @@ Default outputs:
 ```text
 data/raw/sleeper/trades/YYYYMMDD.csv
 data/raw/sleeper/trades/history.csv
+```
+
+To discover candidate Sleeper leagues from a seed username:
+
+```powershell
+ffvaluation discover-sleeper-network --username <username>
+```
+
+Default outputs:
+
+```text
+data/raw/sleeper/discovery/users_history.csv
+data/raw/sleeper/discovery/leagues_history.csv
+data/raw/sleeper/discovery/league_users_history.csv
 ```

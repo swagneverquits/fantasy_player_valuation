@@ -16,8 +16,12 @@ from ffvaluation.sources.rosteraudit import (
     pull_value_history_csv_incremental,
 )
 from ffvaluation.sources.sleeper import (
+    discover_league_network,
     fetch_trade_history,
+    upsert_league_discovery_csv,
+    upsert_league_user_discovery_csv,
     upsert_trade_history_csv,
+    upsert_user_discovery_csv,
     write_trade_history_csv,
 )
 from ffvaluation.sources.registry import list_sources
@@ -210,6 +214,73 @@ def pull_sleeper_trades(
         f"Wrote {len(rows)} Sleeper trades to {output} and upserted {index_output} "
         f"({target_format_rows} target-format guesses)"
     )
+
+
+@app.command("discover-sleeper-network")
+def discover_sleeper_network(
+    username: str = typer.Option(
+        ...,
+        "--username",
+        help="Sleeper username or user ID to seed the crawl.",
+    ),
+    season: list[str] = typer.Option(
+        ["2025", "2026"],
+        "--season",
+        help="NFL league season to inspect. Repeat for multiple seasons.",
+    ),
+    max_depth: int = typer.Option(
+        1,
+        "--max-depth",
+        help="User graph depth. 1 means seed user plus users from seed user's leagues.",
+    ),
+    max_users: int = typer.Option(
+        100,
+        "--max-users",
+        help="Maximum users to resolve.",
+    ),
+    max_leagues: int = typer.Option(
+        500,
+        "--max-leagues",
+        help="Maximum leagues to discover.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("data/raw/sleeper/discovery"),
+        "--output-dir",
+        help="Directory for users, leagues, and league_users history CSVs.",
+    ),
+    sleep_seconds: float = typer.Option(
+        0.1,
+        "--sleep-seconds",
+        help="Delay between Sleeper discovery calls.",
+    ),
+) -> None:
+    """Discover Sleeper users and leagues from a seed user."""
+
+    captured_at = datetime.now(UTC)
+    result = discover_league_network(
+        seed_user=username,
+        seasons=season,
+        max_depth=max_depth,
+        max_users=max_users,
+        max_leagues=max_leagues,
+        captured_at=captured_at,
+        sleep_seconds=sleep_seconds,
+    )
+    users_path = output_dir / "users_history.csv"
+    leagues_path = output_dir / "leagues_history.csv"
+    league_users_path = output_dir / "league_users_history.csv"
+
+    upsert_user_discovery_csv(result.users, users_path)
+    upsert_league_discovery_csv(result.leagues, leagues_path)
+    upsert_league_user_discovery_csv(result.league_users, league_users_path)
+
+    target_leagues = sum(1 for league in result.leagues if league.target_format_guess)
+    console.print(
+        f"Discovered {len(result.users)} users, {len(result.leagues)} leagues, "
+        f"and {len(result.league_users)} league-user edges "
+        f"({target_leagues} target-format league guesses)"
+    )
+    console.print(f"Wrote {users_path}, {leagues_path}, and {league_users_path}")
 
 
 def _load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:

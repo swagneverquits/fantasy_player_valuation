@@ -86,7 +86,7 @@ This plan frames a research path for constructing player value scores directly f
       <td style="white-space: nowrap;">🚧 In Progress</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">-</td>
-      <td>Added a first Sleeper league-history puller; still need real target-format league IDs to size usable data.</td>
+      <td>Added seed-user discovery plus a Sleeper league-history puller; still need real seeds to size usable target-format data.</td>
     </tr>
     <tr>
       <td style="white-space: nowrap;">c</td>
@@ -411,6 +411,10 @@ This plan frames a research path for constructing player value scores directly f
 <details>
 <summary><strong>Candidate Raw Paths</strong></summary>
 
+- Store discovered Sleeper users under <code>data/raw/sleeper/discovery/users_history.csv</code>.
+- Store discovered Sleeper leagues under <code>data/raw/sleeper/discovery/leagues_history.csv</code>.
+- Store discovered Sleeper league-user edges under <code>data/raw/sleeper/discovery/league_users_history.csv</code>.
+- Discover from a seed with <code>ffvaluation discover-sleeper-network --username &lt;username&gt;</code>.
 - Store raw Sleeper trade pulls under <code>data/raw/sleeper/trades/YYYYMMDD.csv</code>.
 - Store upserted trade observations under <code>data/raw/sleeper/trades/history.csv</code>.
 - Pull with <code>ffvaluation pull-sleeper-trades --league-id &lt;league_id&gt;</code>; by default it follows <code>previous_league_id</code> and keeps completed trades from the past 365 days.
