@@ -294,8 +294,9 @@ def read_user_frontier_csv(path: str | Path) -> list[SleeperFrontierRow]:
     if not path.exists():
         return []
 
-    with path.open(newline="", encoding="utf-8") as file:
-        return [parse_frontier_row(row) for row in csv.DictReader(file)]
+    with path.open(newline="", encoding="utf-8-sig") as file:
+        rows = [parse_frontier_row(row) for row in csv.DictReader(file)]
+        return [row for row in rows if row.user_id]
 
 
 def upsert_user_frontier_csv(rows: list[SleeperFrontierRow], path: str | Path) -> Path:
@@ -467,9 +468,10 @@ def format_frontier_row(row: SleeperFrontierRow) -> dict[str, str]:
 
 
 def parse_frontier_row(row: dict[str, str]) -> SleeperFrontierRow:
+    row = {key.strip().lstrip("\ufeff"): value for key, value in row.items() if key}
     expanded_at = row.get("expanded_at", "").strip()
     return SleeperFrontierRow(
-        user_id=row["user_id"],
+        user_id=row.get("user_id", "").strip(),
         username=row.get("username", ""),
         display_name=row.get("display_name", ""),
         discovered_at=datetime.fromisoformat(row["discovered_at"]),
