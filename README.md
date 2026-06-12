@@ -140,11 +140,11 @@ To discover candidate Sleeper leagues from a seed username:
 ffvaluation discover-sleeper-network --username <username>
 ```
 
-The default discovery crawl branches two user-graph hops from the seed and caps
-at 1,000 users and 5,000 leagues. For a larger run, raise the caps explicitly:
+The default discovery crawl branches five user-graph hops from the seed and does
+not cap users or leagues. For a bounded smoke run, set caps explicitly:
 
 ```powershell
-ffvaluation discover-sleeper-network --username <username> --max-depth 3 --max-users 5000 --max-leagues 25000 --progress-every 50
+ffvaluation discover-sleeper-network --username <username> --max-depth 2 --max-users 1000 --max-leagues 5000 --progress-every 50
 ```
 
 Default outputs:

@@ -161,9 +161,9 @@ def discover_league_network(
     *,
     seed_user: str,
     seasons: Iterable[str],
-    max_depth: int = 2,
-    max_users: int = 1000,
-    max_leagues: int = 5000,
+    max_depth: int = 5,
+    max_users: int | None = None,
+    max_leagues: int | None = None,
     captured_at: datetime | None = None,
     sleep_seconds: float = 0.1,
     progress_callback: DiscoveryProgressCallback | None = None,
@@ -180,7 +180,11 @@ def discover_league_network(
     fetched_league_users: set[str] = set()
     seasons = [str(season) for season in seasons]
 
-    while queue and len(seen_user_ids) < max_users and len(leagues_by_id) < max_leagues:
+    while (
+        queue
+        and (max_users is None or len(seen_user_ids) < max_users)
+        and (max_leagues is None or len(leagues_by_id) < max_leagues)
+    ):
         user_ref, depth = queue.pop(0)
         if user_ref in seen_user_refs or user_ref in seen_user_ids:
             continue
@@ -201,7 +205,7 @@ def discover_league_network(
             for league in leagues:
                 league_id = str(league["league_id"])
                 leagues_by_id[league_id] = _league_row(captured_at=captured_at, league=league)
-                if len(leagues_by_id) >= max_leagues:
+                if max_leagues is not None and len(leagues_by_id) >= max_leagues:
                     break
 
                 if league_id in fetched_league_users:
@@ -218,10 +222,16 @@ def discover_league_network(
                         league=league,
                         user=league_user,
                     )
-                    if depth < max_depth and len(seen_user_ids) + len(queue) < max_users:
+                    if (
+                        depth < max_depth
+                        and (
+                            max_users is None
+                            or len(seen_user_ids) + len(queue) < max_users
+                        )
+                    ):
                         queue.append((league_user_id, depth + 1))
 
-            if len(leagues_by_id) >= max_leagues:
+            if max_leagues is not None and len(leagues_by_id) >= max_leagues:
                 break
 
         if progress_callback:

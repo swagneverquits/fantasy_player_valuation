@@ -229,19 +229,19 @@ def discover_sleeper_network(
         help="NFL league season to inspect. Repeat for multiple seasons.",
     ),
     max_depth: int = typer.Option(
-        2,
+        5,
         "--max-depth",
-        help="User graph depth. 2 branches from the seed through leaguemates' leagues.",
+        help="User graph depth. 5 branches from the seed through leaguemates' leagues.",
     ),
-    max_users: int = typer.Option(
-        1000,
+    max_users: int | None = typer.Option(
+        None,
         "--max-users",
-        help="Maximum users to resolve.",
+        help="Maximum users to resolve. Omit for no cap.",
     ),
-    max_leagues: int = typer.Option(
-        5000,
+    max_leagues: int | None = typer.Option(
+        None,
         "--max-leagues",
-        help="Maximum leagues to discover.",
+        help="Maximum leagues to discover. Omit for no cap.",
     ),
     output_dir: Path = typer.Option(
         Path("data/raw/sleeper/discovery"),
