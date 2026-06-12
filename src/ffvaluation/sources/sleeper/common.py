@@ -71,7 +71,8 @@ def upsert_csv(
         key = tuple(row[field] for field in key_fields)
         merged_rows[key] = {field: row.get(field, "") for field in fieldnames}
 
-    with path.open("w", newline="", encoding="utf-8") as file:
+    temp_path = path.with_name(f"{path.name}.tmp")
+    with temp_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(
@@ -81,6 +82,7 @@ def upsert_csv(
                 key=lambda item: tuple(item[1][field] for field in sort_fields),
             )
         )
+    temp_path.replace(path)
 
     return path
 
