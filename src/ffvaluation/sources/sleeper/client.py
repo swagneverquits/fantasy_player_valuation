@@ -237,7 +237,9 @@ def discover_league_network(
                     time.sleep(sleep_seconds)
 
                 for league_user in league_users:
-                    league_user_id = str(league_user["user_id"])
+                    league_user_id = _user_id(league_user)
+                    if not league_user_id:
+                        continue
                     league_users_by_key[(league_id, league_user_id)] = _league_user_row(
                         captured_at=captured_at,
                         league=league,
@@ -361,7 +363,9 @@ def expand_user_frontier(
                     time.sleep(sleep_seconds)
 
                 for league_user in league_users:
-                    league_user_id = str(league_user["user_id"])
+                    league_user_id = _user_id(league_user)
+                    if not league_user_id:
+                        continue
                     league_user_row = _league_user_row(
                         captured_at=captured_at,
                         league=league,
@@ -711,9 +715,13 @@ def _trade_row(
 
 
 def _user_row(*, captured_at: datetime, user: dict[str, Any]) -> SleeperUserRow:
+    user_id = _user_id(user)
+    if not user_id:
+        raise ValueError(f"Sleeper user payload is missing user_id: {user!r}")
+
     return SleeperUserRow(
         captured_at=captured_at,
-        user_id=str(user["user_id"]),
+        user_id=user_id,
         username=str(user.get("username") or ""),
         display_name=str(user.get("display_name") or ""),
         avatar=_optional_str(user.get("avatar")),
@@ -764,7 +772,7 @@ def _league_user_row(
         captured_at=captured_at,
         league_id=str(league["league_id"]),
         league_season=str(league.get("season") or ""),
-        user_id=str(user["user_id"]),
+        user_id=_user_id(user) or "",
         display_name=str(user.get("display_name") or ""),
     )
 
@@ -933,6 +941,12 @@ def _optional_bool(value: bool | None) -> str:
     if value is None:
         return ""
     return str(value).lower()
+
+
+def _user_id(user: Any) -> str | None:
+    if not isinstance(user, dict):
+        return None
+    return _optional_str(user.get("user_id") or user.get("uid"))
 
 
 def _optional_int(value: Any) -> int | None:
