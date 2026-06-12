@@ -353,21 +353,20 @@ def expand_sleeper_network(
             f"No frontier users found at {frontier_path}. Run seed-sleeper-network first."
         )
 
+    users_path = output_dir / "users_history.csv"
+    leagues_path = output_dir / "leagues_history.csv"
+    league_users_path = output_dir / "league_users_history.csv"
     result = expand_user_frontier(
         frontier_path=frontier_path,
         seasons=season,
+        users_path=users_path,
+        leagues_path=leagues_path,
+        league_users_path=league_users_path,
         max_users=max_users,
         max_leagues=max_leagues,
         sleep_seconds=sleep_seconds,
         progress_callback=_discovery_progress_printer(progress_every),
     )
-
-    users_path = output_dir / "users_history.csv"
-    leagues_path = output_dir / "leagues_history.csv"
-    league_users_path = output_dir / "league_users_history.csv"
-    upsert_user_discovery_csv(result.users, users_path)
-    upsert_league_discovery_csv(result.leagues, leagues_path)
-    upsert_league_user_discovery_csv(result.league_users, league_users_path)
 
     target_leagues = sum(1 for league in result.leagues if league.target_format_guess)
     remaining_frontier = sum(1 for row in result.frontier if row.expanded_at is None)

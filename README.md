@@ -144,8 +144,8 @@ ffvaluation expand-sleeper-network
 ```
 
 Each expansion processes unexpanded frontier users, discovers their leagues,
-adds league users back to the frontier, and upserts the discovery tables. For a
-larger batch:
+adds league users back to the frontier, and upserts discovery CSVs after each
+expanded user. For a larger batch:
 
 ```powershell
 ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50
