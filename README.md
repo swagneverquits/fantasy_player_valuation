@@ -62,8 +62,12 @@ data/
       rankings/
         history.csv
       value_history/
+    sleeper/
+      trades/
+        history.csv
   scratch/
     rosteraudit/
+    sleeper/
 plans/
   20260608-valuation_research_plan.md
 src/ffvaluation/
@@ -108,4 +112,20 @@ If you need a different pace, override the delay:
 
 ```powershell
 ffvaluation pull-rosteraudit-history --sleep-seconds 8
+```
+
+Sleeper trade history pulls require a league ID. The command fetches completed
+trade transactions by round/week, follows `previous_league_id` for at most two
+league seasons by default, keeps trades from the past 365 days, writes a dated
+raw snapshot, and upserts:
+
+```powershell
+ffvaluation pull-sleeper-trades --league-id <league_id>
+```
+
+Default outputs:
+
+```text
+data/raw/sleeper/trades/YYYYMMDD.csv
+data/raw/sleeper/trades/history.csv
 ```

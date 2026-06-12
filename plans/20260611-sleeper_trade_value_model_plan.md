@@ -83,10 +83,10 @@ This plan frames a research path for constructing player value scores directly f
     <tr>
       <td style="white-space: nowrap;">b</td>
       <td>Identify trade source</td>
-      <td style="white-space: nowrap;">🅿️ Not Started</td>
+      <td style="white-space: nowrap;">🚧 In Progress</td>
       <td style="white-space: nowrap;">-</td>
       <td style="white-space: nowrap;">-</td>
-      <td>Find leagues or exports where the target format can be verified before pulling trades.</td>
+      <td>Added a first Sleeper league-history puller; still need real target-format league IDs to size usable data.</td>
     </tr>
     <tr>
       <td style="white-space: nowrap;">c</td>
@@ -413,6 +413,7 @@ This plan frames a research path for constructing player value scores directly f
 
 - Store raw Sleeper trade pulls under <code>data/raw/sleeper/trades/YYYYMMDD.csv</code>.
 - Store upserted trade observations under <code>data/raw/sleeper/trades/history.csv</code>.
+- Pull with <code>ffvaluation pull-sleeper-trades --league-id &lt;league_id&gt;</code>; by default it follows <code>previous_league_id</code> and keeps completed trades from the past 365 days.
 - Store intermediate model datasets under <code>data/processed/sleeper/trade_value_model/</code>.
 - Store exploratory probes under <code>data/scratch/sleeper/</code>.
 

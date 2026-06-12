@@ -15,6 +15,11 @@ from ffvaluation.sources.rosteraudit import (
     fetch_rankings_snapshot,
     pull_value_history_csv_incremental,
 )
+from ffvaluation.sources.sleeper import (
+    fetch_trade_history,
+    upsert_trade_history_csv,
+    write_trade_history_csv,
+)
 from ffvaluation.sources.registry import list_sources
 
 app = typer.Typer(no_args_is_help=True)
@@ -131,6 +136,79 @@ def pull_rosteraudit_history(
         "Upserted "
         f"{result.rows_written} RosterAudit value-history rows into {output} "
         f"({result.players_fetched} fetched, {result.players_skipped} skipped)"
+    )
+
+
+@app.command("pull-sleeper-trades")
+def pull_sleeper_trades(
+    league_id: str = typer.Option(
+        ...,
+        "--league-id",
+        help="Sleeper league ID to use as the starting point.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Trade CSV output path. Defaults to data/raw/sleeper/trades/YYYYMMDD.csv.",
+    ),
+    index_output: Path | None = typer.Option(
+        None,
+        "--index-output",
+        help="Upserted trade CSV path. Defaults to data/raw/sleeper/trades/history.csv.",
+    ),
+    days: int = typer.Option(
+        365,
+        "--days",
+        help="Keep trades created within this many days.",
+    ),
+    first_round: int = typer.Option(
+        1,
+        "--first-round",
+        help="First Sleeper transaction round/week to fetch.",
+    ),
+    last_round: int = typer.Option(
+        18,
+        "--last-round",
+        help="Last Sleeper transaction round/week to fetch.",
+    ),
+    follow_previous: bool = typer.Option(
+        True,
+        "--follow-previous/--no-follow-previous",
+        help="Follow previous_league_id links for older seasons.",
+    ),
+    max_leagues: int | None = typer.Option(
+        2,
+        "--max-leagues",
+        help="Limit followed league seasons. Defaults to current plus one previous season.",
+    ),
+    sleep_seconds: float = typer.Option(
+        0.1,
+        "--sleep-seconds",
+        help="Delay between Sleeper transaction calls.",
+    ),
+) -> None:
+    """Pull completed Sleeper trades for a league history."""
+
+    captured_at = datetime.now(UTC)
+    output = output or Path(f"data/raw/sleeper/trades/{captured_at:%Y%m%d}.csv")
+    index_output = index_output or Path("data/raw/sleeper/trades/history.csv")
+    rows = fetch_trade_history(
+        league_id=league_id,
+        days=days,
+        rounds=range(first_round, last_round + 1),
+        follow_previous=follow_previous,
+        max_leagues=max_leagues,
+        captured_at=captured_at,
+        sleep_seconds=sleep_seconds,
+    )
+    write_trade_history_csv(rows, output)
+    upsert_trade_history_csv(rows, index_output)
+
+    target_format_rows = sum(1 for row in rows if row.target_format_guess)
+    console.print(
+        f"Wrote {len(rows)} Sleeper trades to {output} and upserted {index_output} "
+        f"({target_format_rows} target-format guesses)"
     )
 
 
