@@ -64,6 +64,7 @@ data/
       value_history/
     sleeper/
       discovery/
+        user_frontier.csv
         users_history.csv
         leagues_history.csv
         league_users_history.csv
@@ -134,17 +135,20 @@ data/raw/sleeper/trades/YYYYMMDD.csv
 data/raw/sleeper/trades/history.csv
 ```
 
-To discover candidate Sleeper leagues from a seed username:
+To discover candidate Sleeper leagues from a seed username, seed the frontier
+once and then expand it in repeatable batches:
 
 ```powershell
-ffvaluation discover-sleeper-network --username <username>
+ffvaluation seed-sleeper-network --username <username>
+ffvaluation expand-sleeper-network
 ```
 
-The default discovery crawl branches five user-graph hops from the seed and does
-not cap users or leagues. For a bounded smoke run, set caps explicitly:
+Each expansion processes unexpanded frontier users, discovers their leagues,
+adds league users back to the frontier, and upserts the discovery tables. For a
+larger batch:
 
 ```powershell
-ffvaluation discover-sleeper-network --username <username> --max-depth 2 --max-users 1000 --max-leagues 5000 --progress-every 50
+ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50
 ```
 
 Default outputs:
@@ -153,4 +157,5 @@ Default outputs:
 data/raw/sleeper/discovery/users_history.csv
 data/raw/sleeper/discovery/leagues_history.csv
 data/raw/sleeper/discovery/league_users_history.csv
+data/raw/sleeper/discovery/user_frontier.csv
 ```

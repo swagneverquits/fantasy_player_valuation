@@ -17,7 +17,10 @@ from ffvaluation.sources.rosteraudit import (
 )
 from ffvaluation.sources.sleeper import (
     discover_league_network,
+    expand_user_frontier,
     fetch_trade_history,
+    read_user_frontier_csv,
+    seed_user_frontier,
     upsert_league_discovery_csv,
     upsert_league_user_discovery_csv,
     upsert_trade_history_csv,
@@ -287,6 +290,94 @@ def discover_sleeper_network(
         f"({target_leagues} target-format league guesses)"
     )
     console.print(f"Wrote {users_path}, {leagues_path}, and {league_users_path}")
+
+
+@app.command("seed-sleeper-network")
+def seed_sleeper_network(
+    username: str = typer.Option(
+        ...,
+        "--username",
+        help="Sleeper username or user ID to add to the discovery frontier.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("data/raw/sleeper/discovery"),
+        "--output-dir",
+        help="Directory for discovery CSVs.",
+    ),
+) -> None:
+    """Add a Sleeper user to the persistent discovery frontier."""
+
+    frontier_path = output_dir / "user_frontier.csv"
+    row = seed_user_frontier(seed_user=username, path=frontier_path)
+    console.print(f"Seeded {row.username or row.user_id} into {frontier_path}")
+
+
+@app.command("expand-sleeper-network")
+def expand_sleeper_network(
+    season: list[str] = typer.Option(
+        ["2025", "2026"],
+        "--season",
+        help="NFL league season to inspect. Repeat for multiple seasons.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("data/raw/sleeper/discovery"),
+        "--output-dir",
+        help="Directory for discovery CSVs.",
+    ),
+    max_users: int | None = typer.Option(
+        1000,
+        "--max-users",
+        help="Maximum unexpanded frontier users to process in this run. Omit for no cap.",
+    ),
+    max_leagues: int | None = typer.Option(
+        None,
+        "--max-leagues",
+        help="Maximum newly discovered leagues in this run. Omit for no cap.",
+    ),
+    sleep_seconds: float = typer.Option(
+        0.1,
+        "--sleep-seconds",
+        help="Delay between Sleeper discovery calls.",
+    ),
+    progress_every: int = typer.Option(
+        25,
+        "--progress-every",
+        help="Print discovery progress every N expanded users. Use 0 to disable.",
+    ),
+) -> None:
+    """Expand the persistent Sleeper user frontier."""
+
+    frontier_path = output_dir / "user_frontier.csv"
+    if not read_user_frontier_csv(frontier_path):
+        raise typer.BadParameter(
+            f"No frontier users found at {frontier_path}. Run seed-sleeper-network first."
+        )
+
+    result = expand_user_frontier(
+        frontier_path=frontier_path,
+        seasons=season,
+        max_users=max_users,
+        max_leagues=max_leagues,
+        sleep_seconds=sleep_seconds,
+        progress_callback=_discovery_progress_printer(progress_every),
+    )
+
+    users_path = output_dir / "users_history.csv"
+    leagues_path = output_dir / "leagues_history.csv"
+    league_users_path = output_dir / "league_users_history.csv"
+    upsert_user_discovery_csv(result.users, users_path)
+    upsert_league_discovery_csv(result.leagues, leagues_path)
+    upsert_league_user_discovery_csv(result.league_users, league_users_path)
+
+    target_leagues = sum(1 for league in result.leagues if league.target_format_guess)
+    remaining_frontier = sum(1 for row in result.frontier if row.expanded_at is None)
+    console.print(
+        f"Expanded {result.expanded_users} users, found {len(result.leagues)} leagues, "
+        f"and wrote {len(result.league_users)} league-user edges "
+        f"({target_leagues} target-format league guesses)"
+    )
+    console.print(f"Remaining unexpanded frontier users: {remaining_frontier}")
+    console.print(f"Wrote {frontier_path}, {users_path}, {leagues_path}, and {league_users_path}")
 
 
 def _discovery_progress_printer(every: int):

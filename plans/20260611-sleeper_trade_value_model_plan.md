@@ -414,7 +414,9 @@ This plan frames a research path for constructing player value scores directly f
 - Store discovered Sleeper users under <code>data/raw/sleeper/discovery/users_history.csv</code>.
 - Store discovered Sleeper leagues under <code>data/raw/sleeper/discovery/leagues_history.csv</code>.
 - Store discovered Sleeper league-user edges under <code>data/raw/sleeper/discovery/league_users_history.csv</code>.
-- Discover from a seed with <code>ffvaluation discover-sleeper-network --username &lt;username&gt;</code>; default discovery branches five user-graph hops with no user or league cap.
+- Store unexpanded discovery users under <code>data/raw/sleeper/discovery/user_frontier.csv</code>.
+- Seed discovery with <code>ffvaluation seed-sleeper-network --username &lt;username&gt;</code>.
+- Expand discovery iteratively with <code>ffvaluation expand-sleeper-network</code>; each run processes unexpanded frontier users and appends newly found league users back into the frontier.
 - Store raw Sleeper trade pulls under <code>data/raw/sleeper/trades/YYYYMMDD.csv</code>.
 - Store upserted trade observations under <code>data/raw/sleeper/trades/history.csv</code>.
 - Pull with <code>ffvaluation pull-sleeper-trades --league-id &lt;league_id&gt;</code>; by default it follows <code>previous_league_id</code> and keeps completed trades from the past 365 days.
