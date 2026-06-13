@@ -388,8 +388,8 @@ def _discovery_progress_printer(every: int, leagues_path: Path | None = None):
 
     def print_progress(users: int, leagues: int, league_users: int, queued_users: int) -> None:
         if users == 1 or users % every == 0:
-            leagues_size = (
-                f", leagues_history {_format_file_size(leagues_path)}"
+            leagues_history_count = (
+                f", leagues_history {_count_csv_rows(leagues_path)} rows"
                 if leagues_path is not None
                 else ""
             )
@@ -397,23 +397,17 @@ def _discovery_progress_printer(every: int, leagues_path: Path | None = None):
                 "Sleeper discovery: "
                 f"{users} users, {leagues} leagues, {league_users} league-user edges, "
                 f"{queued_users} queued"
-                f"{leagues_size}"
+                f"{leagues_history_count}"
             )
 
     return print_progress
 
 
-def _format_file_size(path: Path) -> str:
+def _count_csv_rows(path: Path) -> int:
     if not path.exists():
-        return "0.0 MB"
-    size = float(path.stat().st_size)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
-            if unit == "B":
-                return f"{int(size)} {unit}"
-            return f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size:.1f} GB"
+        return 0
+    with path.open(encoding="utf-8-sig") as file:
+        return max(sum(1 for _ in file) - 1, 0)
 
 
 def _load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
