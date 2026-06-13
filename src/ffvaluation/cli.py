@@ -367,7 +367,7 @@ def expand_sleeper_network(
         sleep_seconds=sleep_seconds,
         progress_callback=_discovery_progress_printer(
             progress_every,
-            leagues_path=leagues_path,
+            initial_leagues_history_count=_count_csv_rows(leagues_path),
         ),
     )
 
@@ -382,17 +382,19 @@ def expand_sleeper_network(
     console.print(f"Wrote {frontier_path}, {users_path}, {leagues_path}, and {league_users_path}")
 
 
-def _discovery_progress_printer(every: int, leagues_path: Path | None = None):
+def _discovery_progress_printer(
+    every: int,
+    initial_leagues_history_count: int | None = None,
+):
     if every <= 0:
         return None
 
     def print_progress(users: int, leagues: int, league_users: int, queued_users: int) -> None:
         if users == 1 or users % every == 0:
-            leagues_history_count = (
-                f", leagues_history {_count_csv_rows(leagues_path)} rows"
-                if leagues_path is not None
-                else ""
-            )
+            leagues_history_count = ""
+            if initial_leagues_history_count is not None:
+                estimated_rows = initial_leagues_history_count + leagues
+                leagues_history_count = f", leagues_history ~{estimated_rows} rows"
             console.print(
                 "Sleeper discovery: "
                 f"{users} users, {leagues} leagues, {league_users} league-user edges, "
