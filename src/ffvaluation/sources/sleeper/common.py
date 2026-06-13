@@ -3,12 +3,14 @@ from __future__ import annotations
 import csv
 import json
 import os
+import socket
 import time
 import uuid
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
@@ -38,7 +40,13 @@ def transactions_url(league_id: str, round_number: int) -> str:
     return f"{BASE_URL}/league/{league_id}/transactions/{round_number}"
 
 
-def fetch_json(url: str) -> Any:
+def fetch_json(
+    url: str,
+    *,
+    attempts: int = 5,
+    timeout_seconds: float = 30,
+    backoff_seconds: float = 2,
+) -> Any:
     request = Request(
         url,
         headers={
@@ -46,8 +54,20 @@ def fetch_json(url: str) -> Any:
             "User-Agent": "Mozilla/5.0",
         },
     )
-    with urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+    for attempt in range(1, attempts + 1):
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            if error.code not in (429, 500, 502, 503, 504) or attempt == attempts:
+                raise
+            time.sleep(_retry_delay(attempt, backoff_seconds, error))
+        except (TimeoutError, socket.timeout, URLError, ConnectionResetError) as error:
+            if not _is_retryable_network_error(error) or attempt == attempts:
+                raise
+            time.sleep(_retry_delay(attempt, backoff_seconds))
+
+    raise RuntimeError(f"Failed to fetch {url}")
 
 
 def upsert_csv(
@@ -103,6 +123,28 @@ def _replace_with_retry(source: Path, target: Path, *, attempts: int = 10) -> No
                     f"Completed temp file remains at {source}."
                 ) from error
             time.sleep(0.5 * (attempt + 1))
+
+
+def _retry_delay(
+    attempt: int,
+    backoff_seconds: float,
+    error: HTTPError | None = None,
+) -> float:
+    retry_after = error.headers.get("Retry-After") if error is not None else None
+    if retry_after is not None:
+        try:
+            return max(float(retry_after), 0.0)
+        except ValueError:
+            pass
+    return backoff_seconds * attempt
+
+
+def _is_retryable_network_error(error: BaseException) -> bool:
+    if isinstance(error, (TimeoutError, socket.timeout, ConnectionResetError)):
+        return True
+    if isinstance(error, URLError):
+        return isinstance(error.reason, (TimeoutError, socket.timeout, ConnectionResetError))
+    return False
 
 
 def millis_to_datetime(value: Any) -> datetime | None:
