@@ -365,7 +365,10 @@ def expand_sleeper_network(
         max_users=max_users,
         max_leagues=max_leagues,
         sleep_seconds=sleep_seconds,
-        progress_callback=_discovery_progress_printer(progress_every),
+        progress_callback=_discovery_progress_printer(
+            progress_every,
+            leagues_path=leagues_path,
+        ),
     )
 
     target_leagues = sum(1 for league in result.leagues if league.target_format_guess)
@@ -379,19 +382,38 @@ def expand_sleeper_network(
     console.print(f"Wrote {frontier_path}, {users_path}, {leagues_path}, and {league_users_path}")
 
 
-def _discovery_progress_printer(every: int):
+def _discovery_progress_printer(every: int, leagues_path: Path | None = None):
     if every <= 0:
         return None
 
     def print_progress(users: int, leagues: int, league_users: int, queued_users: int) -> None:
         if users == 1 or users % every == 0:
+            leagues_size = (
+                f", leagues_history {_format_file_size(leagues_path)}"
+                if leagues_path is not None
+                else ""
+            )
             console.print(
                 "Sleeper discovery: "
                 f"{users} users, {leagues} leagues, {league_users} league-user edges, "
                 f"{queued_users} queued"
+                f"{leagues_size}"
             )
 
     return print_progress
+
+
+def _format_file_size(path: Path) -> str:
+    if not path.exists():
+        return "0.0 MB"
+    size = float(path.stat().st_size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
 
 
 def _load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
