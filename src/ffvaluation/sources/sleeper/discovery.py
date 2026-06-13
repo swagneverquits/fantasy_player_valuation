@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import time
+from collections import Counter
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,7 +11,6 @@ from typing import Any
 from ffvaluation.sources.sleeper.common import (
     DiscoveryProgressCallback,
     FetchJson,
-    dumps_json,
     fetch_json as default_fetch_json,
     is_dynasty,
     league_users_url,
@@ -25,7 +25,10 @@ from ffvaluation.sources.sleeper.common import (
 )
 from ffvaluation.sources.sleeper.models import (
     LEAGUE_DISCOVERY_COLUMNS,
+    LEAGUE_SETTING_KEYS,
     LEAGUE_USER_DISCOVERY_COLUMNS,
+    ROSTER_POSITION_KEYS,
+    SCORING_SETTING_KEYS,
     USER_DISCOVERY_COLUMNS,
     USER_FRONTIER_COLUMNS,
     SleeperDiscoveryResult,
@@ -418,13 +421,13 @@ def format_user_row(row: SleeperUserRow) -> dict[str, str]:
     return {
         "captured_date": row.captured_at.date().isoformat(),
         "user_id": row.user_id,
-        "username": row.username,
         "display_name": row.display_name,
     }
 
 
 def format_league_row(row: SleeperLeagueRow) -> dict[str, str]:
-    return {
+    position_counts = Counter(row.roster_positions)
+    formatted = {
         "captured_date": row.captured_at.date().isoformat(),
         "league_id": row.league_id,
         "league_name": row.league_name,
@@ -436,10 +439,23 @@ def format_league_row(row: SleeperLeagueRow) -> dict[str, str]:
         "ppr": "" if row.ppr is None else f"{row.ppr:g}",
         "te_premium": f"{row.te_premium:g}",
         "target_format_guess": str(row.target_format_guess).lower(),
-        "league_settings": dumps_json(row.league_settings),
-        "scoring_settings": dumps_json(row.scoring_settings),
-        "roster_positions": dumps_json(row.roster_positions),
     }
+    formatted.update(
+        {
+            f"league_setting_{key}": format_flat_value(row.league_settings.get(key))
+            for key in LEAGUE_SETTING_KEYS
+        }
+    )
+    formatted.update(
+        {
+            f"scoring_{key}": format_flat_value(row.scoring_settings.get(key))
+            for key in SCORING_SETTING_KEYS
+        }
+    )
+    formatted.update(
+        {f"roster_{key}": str(position_counts.get(key, 0)) for key in ROSTER_POSITION_KEYS}
+    )
+    return formatted
 
 
 def format_league_user_row(row: SleeperLeagueUserRow) -> dict[str, str]:
@@ -479,3 +495,11 @@ def _optional_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
     return int(value)
+
+
+def format_flat_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)

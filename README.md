@@ -161,5 +161,8 @@ data/raw/sleeper/discovery/user_frontier.csv
 ```
 
 Discovery history tables use date-level capture columns to keep the raw files
-compact. `league_users_history.csv` is a lean edge table:
-`captured_date,league_id,league_season,user_id`.
+compact. `users_history.csv` stores `captured_date,user_id,display_name`, and
+`league_users_history.csv` is a lean edge table:
+`captured_date,league_id,league_season,user_id`. `leagues_history.csv` flattens
+league settings, scoring settings, and roster slot counts into prefixed columns
+instead of storing JSON blobs.
