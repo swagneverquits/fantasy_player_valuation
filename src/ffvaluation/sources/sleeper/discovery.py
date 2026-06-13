@@ -200,7 +200,6 @@ def expand_user_frontier(
             user_id=resolved_user_id,
             username=frontier_row.username,
             display_name=frontier_row.display_name,
-            avatar=None,
         )
         batch_users.append(users_by_id[resolved_user_id])
 
@@ -364,7 +363,6 @@ def user_row(*, captured_at: datetime, user: dict[str, Any]) -> SleeperUserRow:
         user_id=resolved_user_id,
         username=str(user.get("username") or ""),
         display_name=str(user.get("display_name") or ""),
-        avatar=optional_str(user.get("avatar")),
     )
 
 
@@ -413,23 +411,21 @@ def league_user_row(
         league_id=str(league["league_id"]),
         league_season=str(league.get("season") or ""),
         user_id=user_id(user) or "",
-        display_name=str(user.get("display_name") or ""),
     )
 
 
 def format_user_row(row: SleeperUserRow) -> dict[str, str]:
     return {
-        "captured_at": row.captured_at.isoformat(),
+        "captured_date": row.captured_at.date().isoformat(),
         "user_id": row.user_id,
         "username": row.username,
         "display_name": row.display_name,
-        "avatar": row.avatar or "",
     }
 
 
 def format_league_row(row: SleeperLeagueRow) -> dict[str, str]:
     return {
-        "captured_at": row.captured_at.isoformat(),
+        "captured_date": row.captured_at.date().isoformat(),
         "league_id": row.league_id,
         "league_name": row.league_name,
         "league_season": row.league_season,
@@ -448,11 +444,10 @@ def format_league_row(row: SleeperLeagueRow) -> dict[str, str]:
 
 def format_league_user_row(row: SleeperLeagueUserRow) -> dict[str, str]:
     return {
-        "captured_at": row.captured_at.isoformat(),
+        "captured_date": row.captured_at.date().isoformat(),
         "league_id": row.league_id,
         "league_season": row.league_season,
         "user_id": row.user_id,
-        "display_name": row.display_name,
     }
 
 

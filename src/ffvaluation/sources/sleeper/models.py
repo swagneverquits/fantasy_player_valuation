@@ -35,14 +35,13 @@ TRADE_HISTORY_COLUMNS = [
     "roster_positions",
 ]
 USER_DISCOVERY_COLUMNS = [
-    "captured_at",
+    "captured_date",
     "user_id",
     "username",
     "display_name",
-    "avatar",
 ]
 LEAGUE_DISCOVERY_COLUMNS = [
-    "captured_at",
+    "captured_date",
     "league_id",
     "league_name",
     "league_season",
@@ -58,11 +57,10 @@ LEAGUE_DISCOVERY_COLUMNS = [
     "roster_positions",
 ]
 LEAGUE_USER_DISCOVERY_COLUMNS = [
-    "captured_at",
+    "captured_date",
     "league_id",
     "league_season",
     "user_id",
-    "display_name",
 ]
 USER_FRONTIER_COLUMNS = [
     "user_id",
@@ -111,7 +109,6 @@ class SleeperUserRow:
     user_id: str
     username: str
     display_name: str
-    avatar: str | None
 
 
 @dataclass(frozen=True)
@@ -138,7 +135,6 @@ class SleeperLeagueUserRow:
     league_id: str
     league_season: str
     user_id: str
-    display_name: str
 
 
 @dataclass(frozen=True)
