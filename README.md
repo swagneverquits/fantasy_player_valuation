@@ -152,6 +152,12 @@ batches. For a larger batch:
 ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50 --flush-every 25
 ```
 
+For concurrent discovery, use a small worker pool with a global request throttle:
+
+```powershell
+ffvaluation expand-sleeper-network --max-users 5000 --workers 5 --requests-per-minute 500 --progress-every 50 --flush-every 25
+```
+
 Default outputs:
 
 ```text
@@ -169,4 +175,5 @@ league settings, scoring settings, and roster slot counts into prefixed columns
 instead of storing JSON blobs.
 
 Use `--flush-every 1` for maximum crash safety or a larger value for less disk
-churn during long crawls.
+churn during long crawls. `--sleep-seconds` applies to serial mode; concurrent
+mode uses `--requests-per-minute` instead.

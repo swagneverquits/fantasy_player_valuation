@@ -349,6 +349,16 @@ def expand_sleeper_network(
         "--flush-every",
         help="Flush discovery CSVs every N expanded users. Lower is safer; higher is faster.",
     ),
+    workers: int = typer.Option(
+        1,
+        "--workers",
+        help="Concurrent discovery workers. Use 1 for serial mode.",
+    ),
+    requests_per_minute: int | None = typer.Option(
+        None,
+        "--requests-per-minute",
+        help="Global request throttle for concurrent mode. Defaults to 500 when workers > 1.",
+    ),
 ) -> None:
     """Expand the persistent Sleeper user frontier."""
 
@@ -371,6 +381,8 @@ def expand_sleeper_network(
         max_leagues=max_leagues,
         sleep_seconds=sleep_seconds,
         flush_every=flush_every,
+        workers=workers,
+        requests_per_minute=requests_per_minute,
         progress_callback=_discovery_progress_printer(
             progress_every,
             initial_leagues_history_count=_count_csv_rows(leagues_path),

@@ -4,8 +4,11 @@ import csv
 import time
 from collections import Counter
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from ffvaluation.sources.sleeper.common import (
@@ -171,11 +174,32 @@ def expand_user_frontier(
     captured_at: datetime | None = None,
     sleep_seconds: float = 0.1,
     flush_every: int = 25,
+    workers: int = 1,
+    requests_per_minute: int | None = None,
     progress_callback: DiscoveryProgressCallback | None = None,
     fetch_json: FetchJson | None = None,
 ) -> SleeperFrontierExpansionResult:
     captured_at = captured_at or datetime.now(UTC)
     fetch_json = fetch_json or default_fetch_json
+    workers = max(workers, 1)
+    if workers > 1:
+        if max_leagues is not None:
+            raise ValueError("Concurrent frontier expansion does not support max_leagues.")
+        return expand_user_frontier_parallel(
+            frontier_path=frontier_path,
+            seasons=seasons,
+            users_path=users_path,
+            leagues_path=leagues_path,
+            league_users_path=league_users_path,
+            max_users=max_users,
+            captured_at=captured_at,
+            flush_every=flush_every,
+            workers=workers,
+            requests_per_minute=requests_per_minute or 500,
+            progress_callback=progress_callback,
+            fetch_json=fetch_json,
+        )
+
     frontier = read_user_frontier_csv(frontier_path)
     frontier_by_id = {row.user_id: row for row in frontier}
     users_by_id: dict[str, SleeperUserRow] = {}
@@ -319,6 +343,236 @@ def expand_user_frontier(
         frontier=frontier_rows,
         expanded_users=expanded_users,
     )
+
+
+def expand_user_frontier_parallel(
+    *,
+    frontier_path: str | Path,
+    seasons: Iterable[str],
+    users_path: str | Path | None,
+    leagues_path: str | Path | None,
+    league_users_path: str | Path | None,
+    max_users: int | None,
+    captured_at: datetime,
+    flush_every: int,
+    workers: int,
+    requests_per_minute: int,
+    progress_callback: DiscoveryProgressCallback | None,
+    fetch_json: FetchJson,
+) -> SleeperFrontierExpansionResult:
+    frontier = read_user_frontier_csv(frontier_path)
+    frontier_by_id = {row.user_id: row for row in frontier}
+    work_rows = [
+        row
+        for row in sorted(
+            frontier_by_id.values(),
+            key=lambda row: (row.expanded_at is not None, row.discovered_at, row.user_id),
+        )
+        if row.expanded_at is None
+    ]
+    if max_users is not None:
+        work_rows = work_rows[:max_users]
+
+    users_by_id: dict[str, SleeperUserRow] = {}
+    leagues_by_id: dict[str, SleeperLeagueRow] = {}
+    league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
+    league_users_fetched = (
+        read_league_user_ids_csv(league_users_path) if league_users_path is not None else set()
+    )
+    league_users_fetched_lock = Lock()
+    throttle = RequestThrottle(requests_per_minute)
+    seasons = [str(season) for season in seasons]
+    flush_every = max(flush_every, 1)
+    pending_users: list[SleeperUserRow] = []
+    pending_leagues: list[SleeperLeagueRow] = []
+    pending_league_users: list[SleeperLeagueUserRow] = []
+    expanded_users = 0
+
+    def throttled_fetch_json(url: str) -> Any:
+        throttle.acquire()
+        return fetch_json(url)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(
+                fetch_frontier_user,
+                frontier_row=row,
+                seasons=seasons,
+                captured_at=captured_at,
+                fetch_json=throttled_fetch_json,
+                league_users_fetched=league_users_fetched,
+                league_users_fetched_lock=league_users_fetched_lock,
+            )
+            for row in work_rows
+        ]
+
+        for future in as_completed(futures):
+            result = future.result()
+            for user in result.users:
+                users_by_id[user.user_id] = user
+            for league in result.leagues:
+                leagues_by_id[league.league_id] = league
+            for league_user in result.league_users:
+                league_users_by_key[(league_user.league_id, league_user.user_id)] = league_user
+            for frontier_row in result.discovered_frontier:
+                if frontier_row.user_id not in frontier_by_id:
+                    frontier_by_id[frontier_row.user_id] = frontier_row
+            frontier_by_id[result.frontier_row.user_id] = SleeperFrontierRow(
+                user_id=result.frontier_row.user_id,
+                username=result.frontier_row.username,
+                display_name=result.frontier_row.display_name,
+                discovered_at=result.frontier_row.discovered_at,
+                discovered_from_league_id=result.frontier_row.discovered_from_league_id,
+                expanded_at=captured_at,
+            )
+            expanded_users += 1
+            pending_users.extend(result.users)
+            pending_leagues.extend(result.leagues)
+            pending_league_users.extend(result.league_users)
+
+            if expanded_users % flush_every == 0:
+                frontier_rows = sort_frontier_rows(frontier_by_id.values())
+                flush_discovery_progress(
+                    users=pending_users,
+                    leagues=pending_leagues,
+                    league_users=pending_league_users,
+                    frontier=frontier_rows,
+                    users_path=users_path,
+                    leagues_path=leagues_path,
+                    league_users_path=league_users_path,
+                    frontier_path=frontier_path,
+                )
+                pending_users = []
+                pending_leagues = []
+                pending_league_users = []
+
+            if progress_callback:
+                progress_callback(
+                    expanded_users,
+                    len(leagues_by_id),
+                    len(league_users_by_key),
+                    sum(1 for row in frontier_by_id.values() if row.expanded_at is None),
+                )
+
+    frontier_rows = sort_frontier_rows(frontier_by_id.values())
+    flush_discovery_progress(
+        users=pending_users,
+        leagues=pending_leagues,
+        league_users=pending_league_users,
+        frontier=frontier_rows,
+        users_path=users_path,
+        leagues_path=leagues_path,
+        league_users_path=league_users_path,
+        frontier_path=frontier_path,
+    )
+    return SleeperFrontierExpansionResult(
+        users=sorted(users_by_id.values(), key=lambda row: row.user_id),
+        leagues=sorted(leagues_by_id.values(), key=lambda row: (row.league_season, row.league_id)),
+        league_users=sorted(
+            league_users_by_key.values(),
+            key=lambda row: (row.league_season, row.league_id, row.user_id),
+        ),
+        frontier=frontier_rows,
+        expanded_users=expanded_users,
+    )
+
+
+@dataclass(frozen=True)
+class FrontierUserFetchResult:
+    frontier_row: SleeperFrontierRow
+    users: list[SleeperUserRow]
+    leagues: list[SleeperLeagueRow]
+    league_users: list[SleeperLeagueUserRow]
+    discovered_frontier: list[SleeperFrontierRow]
+
+
+def fetch_frontier_user(
+    *,
+    frontier_row: SleeperFrontierRow,
+    seasons: Iterable[str],
+    captured_at: datetime,
+    fetch_json: FetchJson,
+    league_users_fetched: set[str],
+    league_users_fetched_lock: Lock,
+) -> FrontierUserFetchResult:
+    users: dict[str, SleeperUserRow] = {
+        frontier_row.user_id: SleeperUserRow(
+            captured_at=captured_at,
+            user_id=frontier_row.user_id,
+            username=frontier_row.username,
+            display_name=frontier_row.display_name,
+        )
+    }
+    leagues_by_id: dict[str, SleeperLeagueRow] = {}
+    league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
+    discovered_frontier_by_id: dict[str, SleeperFrontierRow] = {}
+
+    for season in seasons:
+        leagues = fetch_json(user_leagues_url(user_id=frontier_row.user_id, season=str(season)))
+        for league in leagues:
+            league_id = str(league["league_id"])
+            parsed_league = league_row(captured_at=captured_at, league=league)
+            leagues_by_id[league_id] = parsed_league
+
+            with league_users_fetched_lock:
+                if league_id in league_users_fetched:
+                    should_fetch_league_users = False
+                else:
+                    league_users_fetched.add(league_id)
+                    should_fetch_league_users = True
+            if not should_fetch_league_users:
+                continue
+
+            league_users = fetch_json(league_users_url(league_id))
+            for league_user in league_users:
+                league_user_id = user_id(league_user)
+                if not league_user_id:
+                    continue
+                parsed_league_user = league_user_row(
+                    captured_at=captured_at,
+                    league=league,
+                    user=league_user,
+                )
+                league_users_by_key[(league_id, league_user_id)] = parsed_league_user
+                users[league_user_id] = user_row(captured_at=captured_at, user=league_user)
+                if league_user_id != frontier_row.user_id:
+                    discovered_frontier_by_id[league_user_id] = SleeperFrontierRow(
+                        user_id=league_user_id,
+                        username=str(league_user.get("username") or ""),
+                        display_name=str(league_user.get("display_name") or ""),
+                        discovered_at=captured_at,
+                        discovered_from_league_id=league_id,
+                        expanded_at=None,
+                    )
+
+    return FrontierUserFetchResult(
+        frontier_row=frontier_row,
+        users=sorted(users.values(), key=lambda row: row.user_id),
+        leagues=sorted(leagues_by_id.values(), key=lambda row: (row.league_season, row.league_id)),
+        league_users=sorted(
+            league_users_by_key.values(),
+            key=lambda row: (row.league_season, row.league_id, row.user_id),
+        ),
+        discovered_frontier=sorted(
+            discovered_frontier_by_id.values(),
+            key=lambda row: (row.discovered_at, row.user_id),
+        ),
+    )
+
+
+class RequestThrottle:
+    def __init__(self, requests_per_minute: int) -> None:
+        self._spacing_seconds = 60 / max(requests_per_minute, 1)
+        self._lock = Lock()
+        self._next_request_at = 0.0
+
+    def acquire(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            wait_seconds = max(0.0, self._next_request_at - now)
+            self._next_request_at = max(now, self._next_request_at) + self._spacing_seconds
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
 
 
 def read_user_frontier_csv(path: str | Path) -> list[SleeperFrontierRow]:
