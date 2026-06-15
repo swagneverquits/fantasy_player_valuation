@@ -4,7 +4,7 @@ import csv
 import time
 from collections import Counter
 from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -392,79 +392,102 @@ def expand_user_frontier_parallel(
         throttle.acquire()
         return fetch_json(url)
 
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [
-            executor.submit(
-                fetch_frontier_user,
-                frontier_row=row,
-                seasons=seasons,
-                captured_at=captured_at,
-                fetch_json=throttled_fetch_json,
-                league_users_fetched=league_users_fetched,
-                league_users_fetched_lock=league_users_fetched_lock,
-            )
-            for row in work_rows
-        ]
+    def merge_result(result: FrontierUserFetchResult) -> None:
+        nonlocal expanded_users
+        for user in result.users:
+            users_by_id[user.user_id] = user
+        for league in result.leagues:
+            leagues_by_id[league.league_id] = league
+        for league_user in result.league_users:
+            league_users_by_key[(league_user.league_id, league_user.user_id)] = league_user
+        for frontier_row in result.discovered_frontier:
+            if frontier_row.user_id not in frontier_by_id:
+                frontier_by_id[frontier_row.user_id] = frontier_row
+        frontier_by_id[result.frontier_row.user_id] = SleeperFrontierRow(
+            user_id=result.frontier_row.user_id,
+            username=result.frontier_row.username,
+            display_name=result.frontier_row.display_name,
+            discovered_at=result.frontier_row.discovered_at,
+            discovered_from_league_id=result.frontier_row.discovered_from_league_id,
+            expanded_at=captured_at,
+        )
+        expanded_users += 1
+        pending_users.extend(result.users)
+        pending_leagues.extend(result.leagues)
+        pending_league_users.extend(result.league_users)
 
-        for future in as_completed(futures):
-            result = future.result()
-            for user in result.users:
-                users_by_id[user.user_id] = user
-            for league in result.leagues:
-                leagues_by_id[league.league_id] = league
-            for league_user in result.league_users:
-                league_users_by_key[(league_user.league_id, league_user.user_id)] = league_user
-            for frontier_row in result.discovered_frontier:
-                if frontier_row.user_id not in frontier_by_id:
-                    frontier_by_id[frontier_row.user_id] = frontier_row
-            frontier_by_id[result.frontier_row.user_id] = SleeperFrontierRow(
-                user_id=result.frontier_row.user_id,
-                username=result.frontier_row.username,
-                display_name=result.frontier_row.display_name,
-                discovered_at=result.frontier_row.discovered_at,
-                discovered_from_league_id=result.frontier_row.discovered_from_league_id,
-                expanded_at=captured_at,
-            )
-            expanded_users += 1
-            pending_users.extend(result.users)
-            pending_leagues.extend(result.leagues)
-            pending_league_users.extend(result.league_users)
+    def flush_pending() -> None:
+        nonlocal pending_users, pending_leagues, pending_league_users
+        frontier_rows = sort_frontier_rows(frontier_by_id.values())
+        flush_discovery_progress(
+            users=pending_users,
+            leagues=pending_leagues,
+            league_users=pending_league_users,
+            frontier=frontier_rows,
+            users_path=users_path,
+            leagues_path=leagues_path,
+            league_users_path=league_users_path,
+            frontier_path=frontier_path,
+        )
+        pending_users = []
+        pending_leagues = []
+        pending_league_users = []
 
-            if expanded_users % flush_every == 0:
-                frontier_rows = sort_frontier_rows(frontier_by_id.values())
-                flush_discovery_progress(
-                    users=pending_users,
-                    leagues=pending_leagues,
-                    league_users=pending_league_users,
-                    frontier=frontier_rows,
-                    users_path=users_path,
-                    leagues_path=leagues_path,
-                    league_users_path=league_users_path,
-                    frontier_path=frontier_path,
+    work_iter = iter(work_rows)
+    futures: set[Future[FrontierUserFetchResult]] = set()
+    executor = ThreadPoolExecutor(max_workers=workers)
+    interrupted = False
+
+    def submit_until_full() -> None:
+        while len(futures) < workers:
+            try:
+                row = next(work_iter)
+            except StopIteration:
+                return
+            futures.add(
+                executor.submit(
+                    fetch_frontier_user,
+                    frontier_row=row,
+                    seasons=seasons,
+                    captured_at=captured_at,
+                    fetch_json=throttled_fetch_json,
+                    league_users_fetched=league_users_fetched,
+                    league_users_fetched_lock=league_users_fetched_lock,
                 )
-                pending_users = []
-                pending_leagues = []
-                pending_league_users = []
+            )
 
-            if progress_callback:
-                progress_callback(
-                    expanded_users,
-                    len(leagues_by_id),
-                    len(league_users_by_key),
-                    sum(1 for row in frontier_by_id.values() if row.expanded_at is None),
-                )
+    try:
+        submit_until_full()
+        while futures:
+            done, futures = wait(futures, timeout=0.5, return_when=FIRST_COMPLETED)
+            if not done:
+                continue
+
+            for future in done:
+                merge_result(future.result())
+
+                if expanded_users % flush_every == 0:
+                    flush_pending()
+
+                if progress_callback:
+                    progress_callback(
+                        expanded_users,
+                        len(leagues_by_id),
+                        len(league_users_by_key),
+                        sum(1 for row in frontier_by_id.values() if row.expanded_at is None),
+                    )
+
+            submit_until_full()
+    except KeyboardInterrupt:
+        interrupted = True
+        for future in futures:
+            future.cancel()
+        raise
+    finally:
+        executor.shutdown(wait=not interrupted, cancel_futures=interrupted)
+        flush_pending()
 
     frontier_rows = sort_frontier_rows(frontier_by_id.values())
-    flush_discovery_progress(
-        users=pending_users,
-        leagues=pending_leagues,
-        league_users=pending_league_users,
-        frontier=frontier_rows,
-        users_path=users_path,
-        leagues_path=leagues_path,
-        league_users_path=league_users_path,
-        frontier_path=frontier_path,
-    )
     return SleeperFrontierExpansionResult(
         users=sorted(users_by_id.values(), key=lambda row: row.user_id),
         leagues=sorted(leagues_by_id.values(), key=lambda row: (row.league_season, row.league_id)),
