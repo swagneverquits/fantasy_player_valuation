@@ -170,6 +170,7 @@ def expand_user_frontier(
     max_leagues: int | None = None,
     captured_at: datetime | None = None,
     sleep_seconds: float = 0.1,
+    flush_every: int = 25,
     progress_callback: DiscoveryProgressCallback | None = None,
     fetch_json: FetchJson | None = None,
 ) -> SleeperFrontierExpansionResult:
@@ -180,8 +181,15 @@ def expand_user_frontier(
     users_by_id: dict[str, SleeperUserRow] = {}
     leagues_by_id: dict[str, SleeperLeagueRow] = {}
     league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
+    league_users_fetched = (
+        read_league_user_ids_csv(league_users_path) if league_users_path is not None else set()
+    )
+    pending_users: list[SleeperUserRow] = []
+    pending_leagues: list[SleeperLeagueRow] = []
+    pending_league_users: list[SleeperLeagueUserRow] = []
     expanded_users = 0
     seasons = [str(season) for season in seasons]
+    flush_every = max(flush_every, 1)
 
     for frontier_row in sorted(
         frontier_by_id.values(),
@@ -219,6 +227,9 @@ def expand_user_frontier(
                 if max_leagues is not None and len(leagues_by_id) >= max_leagues:
                     break
 
+                if league_id in league_users_fetched:
+                    continue
+                league_users_fetched.add(league_id)
                 league_users = fetch_json(league_users_url(league_id))
                 if sleep_seconds > 0:
                     time.sleep(sleep_seconds)
@@ -260,14 +271,24 @@ def expand_user_frontier(
         )
         expanded_users += 1
         frontier_rows = sort_frontier_rows(frontier_by_id.values())
+        pending_users.extend(batch_users)
+        pending_leagues.extend(batch_leagues)
+        pending_league_users.extend(batch_league_users)
 
-        if users_path is not None:
-            upsert_user_discovery_csv(batch_users, users_path)
-        if leagues_path is not None:
-            upsert_league_discovery_csv(batch_leagues, leagues_path)
-        if league_users_path is not None:
-            upsert_league_user_discovery_csv(batch_league_users, league_users_path)
-        upsert_user_frontier_csv(frontier_rows, frontier_path)
+        if expanded_users % flush_every == 0:
+            flush_discovery_progress(
+                users=pending_users,
+                leagues=pending_leagues,
+                league_users=pending_league_users,
+                frontier=frontier_rows,
+                users_path=users_path,
+                leagues_path=leagues_path,
+                league_users_path=league_users_path,
+                frontier_path=frontier_path,
+            )
+            pending_users = []
+            pending_leagues = []
+            pending_league_users = []
 
         if progress_callback:
             progress_callback(
@@ -278,7 +299,16 @@ def expand_user_frontier(
             )
 
     frontier_rows = sort_frontier_rows(frontier_by_id.values())
-    upsert_user_frontier_csv(frontier_rows, frontier_path)
+    flush_discovery_progress(
+        users=pending_users,
+        leagues=pending_leagues,
+        league_users=pending_league_users,
+        frontier=frontier_rows,
+        users_path=users_path,
+        leagues_path=leagues_path,
+        league_users_path=league_users_path,
+        frontier_path=frontier_path,
+    )
     return SleeperFrontierExpansionResult(
         users=sorted(users_by_id.values(), key=lambda row: row.user_id),
         leagues=sorted(leagues_by_id.values(), key=lambda row: (row.league_season, row.league_id)),
@@ -309,6 +339,26 @@ def upsert_user_frontier_csv(rows: list[SleeperFrontierRow], path: str | Path) -
         key_fields=("user_id",),
         sort_fields=("expanded_at", "discovered_at", "user_id"),
     )
+
+
+def flush_discovery_progress(
+    *,
+    users: list[SleeperUserRow],
+    leagues: list[SleeperLeagueRow],
+    league_users: list[SleeperLeagueUserRow],
+    frontier: list[SleeperFrontierRow],
+    users_path: str | Path | None,
+    leagues_path: str | Path | None,
+    league_users_path: str | Path | None,
+    frontier_path: str | Path,
+) -> None:
+    if users_path is not None and users:
+        upsert_user_discovery_csv(users, users_path)
+    if leagues_path is not None and leagues:
+        upsert_league_discovery_csv(leagues, leagues_path)
+    if league_users_path is not None and league_users:
+        upsert_league_user_discovery_csv(league_users, league_users_path)
+    upsert_user_frontier_csv(frontier, frontier_path)
 
 
 def sort_frontier_rows(rows: Iterable[SleeperFrontierRow]) -> list[SleeperFrontierRow]:
@@ -354,6 +404,20 @@ def upsert_league_user_discovery_csv(
         key_fields=("league_id", "user_id"),
         sort_fields=("league_season", "league_id", "user_id"),
     )
+
+
+def read_league_user_ids_csv(path: str | Path) -> set[str]:
+    path = Path(path)
+    if not path.exists():
+        return set()
+
+    league_ids: set[str] = set()
+    with path.open(newline="", encoding="utf-8-sig") as file:
+        for row in csv.DictReader(file):
+            league_id = row.get("league_id", "").strip()
+            if league_id:
+                league_ids.add(league_id)
+    return league_ids
 
 
 def user_row(*, captured_at: datetime, user: dict[str, Any]) -> SleeperUserRow:

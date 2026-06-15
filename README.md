@@ -144,11 +144,12 @@ ffvaluation expand-sleeper-network
 ```
 
 Each expansion processes unexpanded frontier users, discovers their leagues,
-adds league users back to the frontier, and upserts discovery CSVs after each
-expanded user. For a larger batch:
+adds league users back to the frontier, skips league-user API calls for leagues
+already present in `league_users_history.csv`, and upserts discovery CSVs in
+batches. For a larger batch:
 
 ```powershell
-ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50
+ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50 --flush-every 25
 ```
 
 Default outputs:
@@ -166,3 +167,6 @@ compact. `users_history.csv` stores `captured_date,user_id,display_name`, and
 `captured_date,league_id,league_season,user_id`. `leagues_history.csv` flattens
 league settings, scoring settings, and roster slot counts into prefixed columns
 instead of storing JSON blobs.
+
+Use `--flush-every 1` for maximum crash safety or a larger value for less disk
+churn during long crawls.

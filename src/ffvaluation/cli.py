@@ -344,6 +344,11 @@ def expand_sleeper_network(
         "--progress-every",
         help="Print discovery progress every N expanded users. Use 0 to disable.",
     ),
+    flush_every: int = typer.Option(
+        25,
+        "--flush-every",
+        help="Flush discovery CSVs every N expanded users. Lower is safer; higher is faster.",
+    ),
 ) -> None:
     """Expand the persistent Sleeper user frontier."""
 
@@ -365,6 +370,7 @@ def expand_sleeper_network(
         max_users=max_users,
         max_leagues=max_leagues,
         sleep_seconds=sleep_seconds,
+        flush_every=flush_every,
         progress_callback=_discovery_progress_printer(
             progress_every,
             initial_leagues_history_count=_count_csv_rows(leagues_path),
