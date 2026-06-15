@@ -59,7 +59,7 @@ def fetch_json(
             with urlopen(request, timeout=timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
-            if error.code not in (429, 500, 502, 503, 504) or attempt == attempts:
+            if error.code not in (429, 500, 502, 503, 504, 522) or attempt == attempts:
                 raise
             time.sleep(_retry_delay(attempt, backoff_seconds, error))
         except (TimeoutError, socket.timeout, URLError, ConnectionResetError) as error:
