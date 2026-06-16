@@ -22,6 +22,19 @@ SNAPSHOT_COLUMNS = [
     "rank",
     "raw_value",
 ]
+SNAPSHOT_HISTORY_COLUMNS = [
+    "source",
+    "captured_at",
+    "as_of_date",
+    "season",
+    "week",
+    "player_id",
+    "player_name",
+    "position",
+    "team",
+    "rank",
+    "raw_value",
+]
 
 
 class ManualSnapshotRow(BaseModel):
@@ -35,6 +48,66 @@ def load_manual_snapshot(path: str | Path) -> list[ManualSnapshotRow]:
         reader = csv.DictReader(file)
         validate_snapshot_columns(reader.fieldnames or [])
         return [_parse_row(row, row_number=index + 2) for index, row in enumerate(reader)]
+
+
+def write_snapshot_csv(rows: list[ManualSnapshotRow], path: str | Path) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=SNAPSHOT_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(_format_row(row))
+
+    return path
+
+
+def upsert_snapshot_history_csv(
+    rows: list[ManualSnapshotRow],
+    path: str | Path,
+    *,
+    as_of_date: str,
+) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    merged_rows: dict[tuple[str, str, str], dict[str, str]] = {}
+
+    if path.exists():
+        with path.open(newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                key = (row["source"], row["as_of_date"], row["player_id"])
+                merged_rows[key] = {
+                    field: row.get(field, "") for field in SNAPSHOT_HISTORY_COLUMNS
+                }
+
+    for row in rows:
+        formatted = _format_row(row)
+        formatted["as_of_date"] = as_of_date
+        key = (formatted["source"], formatted["as_of_date"], formatted["player_id"])
+        merged_rows[key] = {
+            field: formatted.get(field, "") for field in SNAPSHOT_HISTORY_COLUMNS
+        }
+
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=SNAPSHOT_HISTORY_COLUMNS)
+        writer.writeheader()
+        writer.writerows(
+            row
+            for _key, row in sorted(
+                merged_rows.items(),
+                key=lambda item: (
+                    item[1]["source"],
+                    item[1]["as_of_date"],
+                    _optional_sort_int(item[1]["rank"]),
+                    item[1]["player_name"],
+                    item[1]["player_id"],
+                ),
+            )
+        )
+
+    return path
 
 
 def validate_snapshot_columns(columns: list[str]) -> None:
@@ -81,3 +154,23 @@ def _optional_float(value: str) -> float | None:
     stripped = value.strip()
     return float(stripped) if stripped else None
 
+
+def _optional_sort_int(value: str) -> int:
+    stripped = value.strip()
+    return int(stripped) if stripped else 1_000_000
+
+
+def _format_row(row: ManualSnapshotRow) -> dict[str, str]:
+    valuation = row.valuation
+    return {
+        "source": valuation.source,
+        "captured_at": valuation.captured_at.isoformat(),
+        "season": str(valuation.season),
+        "week": "" if valuation.week is None else str(valuation.week),
+        "player_id": row.player.player_id,
+        "player_name": row.player.name,
+        "position": row.player.position,
+        "team": row.player.team or "",
+        "rank": "" if valuation.rank is None else str(valuation.rank),
+        "raw_value": "" if valuation.raw_value is None else f"{valuation.raw_value:g}",
+    }

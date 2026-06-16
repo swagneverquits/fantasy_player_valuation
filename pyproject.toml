@@ -16,7 +16,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.2",
   "ruff>=0.5",
 ]
 
@@ -29,7 +28,4 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
 

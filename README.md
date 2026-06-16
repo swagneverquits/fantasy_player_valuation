@@ -50,12 +50,29 @@ cd C:\dev\fantasy_player_valuation
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest
+ffvaluation sources
 ```
 
 ## Project Layout
 
 ```text
+data/
+  raw/
+    rosteraudit/
+      rankings/
+        history.csv
+      value_history/
+    sleeper/
+      discovery/
+        user_frontier.csv
+        users_history.csv
+        leagues_history.csv
+        league_users_history.csv
+      trades/
+        history.csv
+  scratch/
+    rosteraudit/
+    sleeper/
 plans/
   20260608-valuation_research_plan.md
 src/ffvaluation/
@@ -64,10 +81,126 @@ src/ffvaluation/
     snapshots.py
   sources/
     registry.py
+    rosteraudit/
+      client.py
+    sleeper/
+      client.py
   evaluation/
     metrics.py
-tests/
-  fixtures/
-    manual_snapshot.csv
-  test_metrics.py
 ```
+
+Canonical source pulls go under `data/raw/<source>/<dataset>/YYYYMMDD.csv`.
+Ad hoc smoke runs, debug exports, and partial samples go under `data/scratch/<source>/`.
+Source-specific collectors and helpers live under `src/ffvaluation/sources/<source>/`.
+
+RosterAudit current rankings are the normal daily pull:
+
+```powershell
+ffvaluation pull-rosteraudit
+```
+
+That writes a dated raw snapshot and upserts the same rows into:
+
+```text
+data/raw/rosteraudit/rankings/history.csv
+```
+
+RosterAudit value history is a slow backfill/recovery pull. By default it waits
+5 seconds between player-page calls to avoid rate limits, writes after each
+player, and can resume if a run is interrupted:
+
+```powershell
+ffvaluation pull-rosteraudit-history
+```
+
+If you need a different pace, override the delay:
+
+```powershell
+ffvaluation pull-rosteraudit-history --sleep-seconds 8
+```
+
+Sleeper trade history pulls require a league ID. The command fetches completed
+trade transactions by round/week, follows `previous_league_id` for at most two
+league seasons by default, keeps trades from the past 365 days, writes a dated
+raw snapshot, and upserts:
+
+```powershell
+ffvaluation pull-sleeper-trades --league-id <league_id>
+```
+
+Default outputs:
+
+```text
+data/raw/sleeper/trades/YYYYMMDD.csv
+data/raw/sleeper/trades/history.csv
+```
+
+To discover candidate Sleeper leagues from a seed username, seed the frontier
+once and then expand it in repeatable batches:
+
+```powershell
+ffvaluation seed-sleeper-network --username <username>
+ffvaluation expand-sleeper-network
+```
+
+Each expansion processes unexpanded frontier users, discovers their leagues,
+adds league users back to the frontier, skips league-user API calls for leagues
+already present in `league_users_history.csv`, and upserts discovery CSVs in
+batches. For a larger batch:
+
+```powershell
+ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50 --flush-every 25
+```
+
+For concurrent discovery, use a small worker pool with a global request throttle:
+
+```powershell
+ffvaluation expand-sleeper-network --max-users 5000 --workers 5 --requests-per-minute 500 --progress-every 50 --flush-every 25 --timing
+```
+
+Discovery expansion writes live state to SQLite by default. This is the
+canonical discovery store:
+
+```text
+data/raw/sleeper/discovery/discovery.sqlite
+```
+
+Import existing CSV snapshots into SQLite:
+
+```powershell
+ffvaluation import-sleeper-discovery-csv
+```
+
+Query SQLite directly from PowerShell:
+
+```powershell
+sqlite3 data/raw/sleeper/discovery/discovery.sqlite "select count(*) from leagues;"
+```
+
+Refresh human-readable CSV snapshots only when needed:
+
+```powershell
+ffvaluation export-sleeper-discovery-csv
+```
+
+Default outputs:
+
+```text
+data/raw/sleeper/discovery/users_history.csv
+data/raw/sleeper/discovery/leagues_history.csv
+data/raw/sleeper/discovery/league_users_history.csv
+data/raw/sleeper/discovery/user_frontier.csv
+```
+
+Discovery history tables use date-level capture columns to keep the raw files
+compact. `users_history.csv` stores `captured_date,user_id,display_name`, and
+`league_users_history.csv` is a lean edge table:
+`captured_date,league_id,league_season,user_id`. `leagues_history.csv` flattens
+league settings, scoring settings, and roster slot counts into prefixed columns
+instead of storing JSON blobs.
+
+Use `--flush-every 1` for maximum crash safety or a larger value for less disk
+churn during long crawls. Concurrent mode uses `--requests-per-minute`. Use
+`--timing` to print request, retry, throttle, flush, and yield telemetry as a
+progress table. CSV snapshots are optional exports; they are not required for
+normal crawling.
