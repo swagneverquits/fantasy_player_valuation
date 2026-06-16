@@ -3,6 +3,7 @@
 from ffvaluation.sources.sleeper.client import (
     BASE_URL,
     DiscoveryTiming,
+    SleeperDiscoveryStore,
     SleeperDiscoveryResult,
     SleeperFrontierExpansionResult,
     SleeperFrontierRow,
@@ -12,6 +13,7 @@ from ffvaluation.sources.sleeper.client import (
     SleeperUserRow,
     discover_league_network,
     expand_user_frontier,
+    expand_user_frontier_sqlite,
     fetch_trade_history,
     read_user_frontier_csv,
     seed_user_frontier,
@@ -26,6 +28,7 @@ from ffvaluation.sources.sleeper.client import (
 __all__ = [
     "BASE_URL",
     "DiscoveryTiming",
+    "SleeperDiscoveryStore",
     "SleeperDiscoveryResult",
     "SleeperFrontierExpansionResult",
     "SleeperFrontierRow",
@@ -35,6 +38,7 @@ __all__ = [
     "SleeperUserRow",
     "discover_league_network",
     "expand_user_frontier",
+    "expand_user_frontier_sqlite",
     "fetch_trade_history",
     "read_user_frontier_csv",
     "seed_user_frontier",

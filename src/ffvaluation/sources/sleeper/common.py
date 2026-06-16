@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 BASE_URL = "https://api.sleeper.app/v1"
 
 FetchJson = Callable[[str], Any]
+RetryCallback = Callable[[str, float], None]
 DiscoveryProgressCallback = Callable[[int, int, int, int, int], None]
 
 
@@ -46,6 +47,7 @@ def fetch_json(
     attempts: int = 5,
     timeout_seconds: float = 30,
     backoff_seconds: float = 2,
+    retry_callback: RetryCallback | None = None,
 ) -> Any:
     request = Request(
         url,
@@ -61,11 +63,17 @@ def fetch_json(
         except HTTPError as error:
             if error.code not in (429, 500, 502, 503, 504, 522) or attempt == attempts:
                 raise
-            time.sleep(_retry_delay(attempt, backoff_seconds, error))
+            delay = _retry_delay(attempt, backoff_seconds, error)
+            if retry_callback is not None:
+                retry_callback(str(error.code), delay)
+            time.sleep(delay)
         except (TimeoutError, socket.timeout, URLError, ConnectionResetError) as error:
             if not _is_retryable_network_error(error) or attempt == attempts:
                 raise
-            time.sleep(_retry_delay(attempt, backoff_seconds))
+            delay = _retry_delay(attempt, backoff_seconds)
+            if retry_callback is not None:
+                retry_callback(_retry_reason(error), delay)
+            time.sleep(delay)
 
     raise RuntimeError(f"Failed to fetch {url}")
 
@@ -145,6 +153,16 @@ def _is_retryable_network_error(error: BaseException) -> bool:
     if isinstance(error, URLError):
         return isinstance(error.reason, (TimeoutError, socket.timeout, ConnectionResetError))
     return False
+
+
+def _retry_reason(error: BaseException) -> str:
+    if isinstance(error, (TimeoutError, socket.timeout)):
+        return "timeout"
+    if isinstance(error, ConnectionResetError):
+        return "connection_reset"
+    if isinstance(error, URLError):
+        return _retry_reason(error.reason)
+    return type(error).__name__
 
 
 def millis_to_datetime(value: Any) -> datetime | None:

@@ -158,6 +158,18 @@ For concurrent discovery, use a small worker pool with a global request throttle
 ffvaluation expand-sleeper-network --max-users 5000 --workers 5 --requests-per-minute 500 --progress-every 50 --flush-every 25 --timing
 ```
 
+Discovery expansion writes live state to SQLite by default:
+
+```text
+data/raw/sleeper/discovery/discovery.sqlite
+```
+
+Refresh human-readable CSV snapshots when needed:
+
+```powershell
+ffvaluation export-sleeper-discovery-csv
+```
+
 Default outputs:
 
 ```text
@@ -175,6 +187,6 @@ league settings, scoring settings, and roster slot counts into prefixed columns
 instead of storing JSON blobs.
 
 Use `--flush-every 1` for maximum crash safety or a larger value for less disk
-churn during long crawls. `--sleep-seconds` applies to serial mode; concurrent
-mode uses `--requests-per-minute` instead. Use `--timing` to print request,
-throttle, flush, and yield telemetry as a progress table.
+churn during long crawls. Concurrent mode uses `--requests-per-minute`. Use
+`--timing` to print request, retry, throttle, flush, and yield telemetry as a
+progress table.

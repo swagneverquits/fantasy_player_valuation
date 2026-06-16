@@ -17,8 +17,9 @@ from ffvaluation.sources.rosteraudit import (
 )
 from ffvaluation.sources.sleeper import (
     DiscoveryTiming,
+    SleeperDiscoveryStore,
     discover_league_network,
-    expand_user_frontier,
+    expand_user_frontier_sqlite,
     fetch_trade_history,
     read_user_frontier_csv,
     seed_user_frontier,
@@ -305,12 +306,23 @@ def seed_sleeper_network(
         "--output-dir",
         help="Directory for discovery CSVs.",
     ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="SQLite discovery database path. Defaults to <output-dir>/discovery.sqlite.",
+    ),
 ) -> None:
     """Add a Sleeper user to the persistent discovery frontier."""
 
+    db_path = db_path or output_dir / "discovery.sqlite"
     frontier_path = output_dir / "user_frontier.csv"
     row = seed_user_frontier(seed_user=username, path=frontier_path)
+    store = SleeperDiscoveryStore(db_path)
+    store.bootstrap_from_csv(output_dir)
+    store.upsert_discovery(users=[], leagues=[], league_users=[], frontier=[row])
+    store.close()
     console.print(f"Seeded {row.username or row.user_id} into {frontier_path}")
+    console.print(f"Seeded SQLite discovery state at {db_path}")
 
 
 @app.command("expand-sleeper-network")
@@ -324,6 +336,11 @@ def expand_sleeper_network(
         Path("data/raw/sleeper/discovery"),
         "--output-dir",
         help="Directory for discovery CSVs.",
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="SQLite discovery database path. Defaults to <output-dir>/discovery.sqlite.",
     ),
     max_users: int | None = typer.Option(
         1000,
@@ -368,31 +385,35 @@ def expand_sleeper_network(
 ) -> None:
     """Expand the persistent Sleeper user frontier."""
 
+    db_path = db_path or output_dir / "discovery.sqlite"
+    if max_leagues is not None:
+        raise typer.BadParameter("SQLite-backed expansion does not support --max-leagues.")
     frontier_path = output_dir / "user_frontier.csv"
-    if not read_user_frontier_csv(frontier_path):
+    store = SleeperDiscoveryStore(db_path)
+    store.bootstrap_from_csv(output_dir)
+    if not store.read_frontier() and not read_user_frontier_csv(frontier_path):
+        store.close()
         raise typer.BadParameter(
             f"No frontier users found at {frontier_path}. Run seed-sleeper-network first."
         )
+    initial_league_count = store.count_leagues()
+    store.close()
 
-    users_path = output_dir / "users_history.csv"
-    leagues_path = output_dir / "leagues_history.csv"
-    league_users_path = output_dir / "league_users_history.csv"
     timing_collector = DiscoveryTiming() if timing else None
-    result = expand_user_frontier(
-        frontier_path=frontier_path,
+    effective_requests_per_minute = requests_per_minute
+    if effective_requests_per_minute is None:
+        effective_requests_per_minute = 500 if workers > 1 else max(int(60 / max(sleep_seconds, 0.001)), 1)
+    result = expand_user_frontier_sqlite(
+        db_path=db_path,
+        csv_dir=output_dir,
         seasons=season,
-        users_path=users_path,
-        leagues_path=leagues_path,
-        league_users_path=league_users_path,
         max_users=max_users,
-        max_leagues=max_leagues,
-        sleep_seconds=sleep_seconds,
         flush_every=flush_every,
         workers=workers,
-        requests_per_minute=requests_per_minute,
+        requests_per_minute=effective_requests_per_minute,
         progress_callback=_discovery_progress_printer(
             progress_every,
-            initial_leagues_history_count=_count_csv_rows(leagues_path),
+            initial_leagues_history_count=initial_league_count,
             timing_collector=timing_collector,
         ),
         timing_collector=timing_collector,
@@ -406,7 +427,30 @@ def expand_sleeper_network(
         f"({target_leagues} target-format league guesses)"
     )
     console.print(f"Remaining unexpanded frontier users: {remaining_frontier}")
-    console.print(f"Wrote {frontier_path}, {users_path}, {leagues_path}, and {league_users_path}")
+    console.print(f"Wrote SQLite discovery state to {db_path}")
+    console.print(f"Run export-sleeper-discovery-csv to refresh CSV snapshots in {output_dir}")
+
+
+@app.command("export-sleeper-discovery-csv")
+def export_sleeper_discovery_csv(
+    output_dir: Path = typer.Option(
+        Path("data/raw/sleeper/discovery"),
+        "--output-dir",
+        help="Directory for discovery CSV snapshots.",
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="SQLite discovery database path. Defaults to <output-dir>/discovery.sqlite.",
+    ),
+) -> None:
+    """Export SQLite Sleeper discovery state to CSV snapshots."""
+
+    db_path = db_path or output_dir / "discovery.sqlite"
+    store = SleeperDiscoveryStore(db_path)
+    store.export_csv(output_dir)
+    store.close()
+    console.print(f"Exported Sleeper discovery CSVs from {db_path} to {output_dir}")
 
 
 def _discovery_progress_printer(
@@ -492,6 +536,13 @@ def _discovery_timing_table(
     table.add_row("Throttle wait", _format_seconds(snapshot.throttle_wait_seconds))
     table.add_row("Flush time", _format_seconds(snapshot.flush_seconds))
     table.add_row("Flushes", str(snapshot.flush_count))
+    table.add_row("Retries", str(snapshot.retry_count))
+    table.add_row("Retry wait", _format_seconds(snapshot.retry_wait_seconds))
+    if snapshot.retry_reasons:
+        retry_reasons = ", ".join(
+            f"{reason}={count}" for reason, count in sorted(snapshot.retry_reasons.items())
+        )
+        table.add_row("Retry reasons", retry_reasons)
     table.add_row("New leagues/user", f"{_safe_div(new_leagues, users):.2f}")
     if total_tracked_seconds > 0:
         table.add_row("HTTP share", f"{snapshot.request_seconds / total_tracked_seconds:.1%}")

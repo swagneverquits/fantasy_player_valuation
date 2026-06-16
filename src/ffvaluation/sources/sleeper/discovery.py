@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import sqlite3
 import time
 from collections import Counter
 from collections.abc import Iterable
@@ -59,7 +60,7 @@ def discover_league_network(
     captured_at = captured_at or datetime.now(UTC)
     fetch_json = fetch_json or default_fetch_json
     if timing_collector is not None:
-        fetch_json = timed_fetch_json(fetch_json, timing_collector)
+        fetch_json = instrument_fetch_json(fetch_json, timing_collector)
     users_by_id: dict[str, SleeperUserRow] = {}
     leagues_by_id: dict[str, SleeperLeagueRow] = {}
     league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
@@ -187,7 +188,7 @@ def expand_user_frontier(
     captured_at = captured_at or datetime.now(UTC)
     fetch_json = fetch_json or default_fetch_json
     if timing_collector is not None:
-        fetch_json = timed_fetch_json(fetch_json, timing_collector)
+        fetch_json = instrument_fetch_json(fetch_json, timing_collector)
     workers = max(workers, 1)
     if workers > 1:
         if max_leagues is not None:
@@ -522,6 +523,164 @@ def expand_user_frontier_parallel(
     )
 
 
+def expand_user_frontier_sqlite(
+    *,
+    db_path: str | Path,
+    csv_dir: str | Path,
+    seasons: Iterable[str],
+    max_users: int | None,
+    captured_at: datetime | None = None,
+    flush_every: int = 25,
+    workers: int = 1,
+    requests_per_minute: int = 500,
+    progress_callback: DiscoveryProgressCallback | None = None,
+    timing_collector: DiscoveryTiming | None = None,
+    fetch_json: FetchJson | None = None,
+) -> SleeperFrontierExpansionResult:
+    captured_at = captured_at or datetime.now(UTC)
+    fetch_json = fetch_json or default_fetch_json
+    if timing_collector is not None:
+        fetch_json = instrument_fetch_json(fetch_json, timing_collector)
+
+    store = SleeperDiscoveryStore(db_path)
+    store.bootstrap_from_csv(csv_dir)
+    frontier_by_id = {row.user_id: row for row in store.read_frontier()}
+    work_rows = [
+        row
+        for row in sort_frontier_rows(frontier_by_id.values())
+        if row.expanded_at is None
+    ]
+    if max_users is not None:
+        work_rows = work_rows[:max_users]
+
+    users_by_id: dict[str, SleeperUserRow] = {}
+    leagues_by_id: dict[str, SleeperLeagueRow] = {}
+    league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
+    league_users_fetched = store.read_league_user_ids()
+    existing_league_ids = store.read_league_ids()
+    new_league_ids: set[str] = set()
+    league_users_fetched_lock = Lock()
+    throttle = RequestThrottle(requests_per_minute, timing_collector=timing_collector)
+    seasons = [str(season) for season in seasons]
+    flush_every = max(flush_every, 1)
+    workers = max(workers, 1)
+    pending_users: list[SleeperUserRow] = []
+    pending_leagues: list[SleeperLeagueRow] = []
+    pending_league_users: list[SleeperLeagueUserRow] = []
+    expanded_users = 0
+
+    def throttled_fetch_json(url: str) -> Any:
+        throttle.acquire()
+        return fetch_json(url)
+
+    def merge_result(result: FrontierUserFetchResult) -> None:
+        nonlocal expanded_users
+        for user in result.users:
+            users_by_id[user.user_id] = user
+        for league in result.leagues:
+            leagues_by_id[league.league_id] = league
+            if league.league_id not in existing_league_ids:
+                new_league_ids.add(league.league_id)
+        for league_user in result.league_users:
+            league_users_by_key[(league_user.league_id, league_user.user_id)] = league_user
+        for frontier_row in result.discovered_frontier:
+            if frontier_row.user_id not in frontier_by_id:
+                frontier_by_id[frontier_row.user_id] = frontier_row
+        frontier_by_id[result.frontier_row.user_id] = SleeperFrontierRow(
+            user_id=result.frontier_row.user_id,
+            username=result.frontier_row.username,
+            display_name=result.frontier_row.display_name,
+            discovered_at=result.frontier_row.discovered_at,
+            discovered_from_league_id=result.frontier_row.discovered_from_league_id,
+            expanded_at=captured_at,
+        )
+        expanded_users += 1
+        pending_users.extend(result.users)
+        pending_leagues.extend(result.leagues)
+        pending_league_users.extend(result.league_users)
+
+    def flush_pending() -> None:
+        nonlocal pending_users, pending_leagues, pending_league_users
+        start = time.perf_counter()
+        try:
+            store.upsert_discovery(
+                users=pending_users,
+                leagues=pending_leagues,
+                league_users=pending_league_users,
+                frontier=sort_frontier_rows(frontier_by_id.values()),
+            )
+        finally:
+            if timing_collector is not None:
+                timing_collector.record_flush(time.perf_counter() - start)
+        pending_users = []
+        pending_leagues = []
+        pending_league_users = []
+
+    work_iter = iter(work_rows)
+    futures: set[Future[FrontierUserFetchResult]] = set()
+    executor = ThreadPoolExecutor(max_workers=workers)
+    interrupted = False
+
+    def submit_until_full() -> None:
+        while len(futures) < workers:
+            try:
+                row = next(work_iter)
+            except StopIteration:
+                return
+            futures.add(
+                executor.submit(
+                    fetch_frontier_user,
+                    frontier_row=row,
+                    seasons=seasons,
+                    captured_at=captured_at,
+                    fetch_json=throttled_fetch_json,
+                    league_users_fetched=league_users_fetched,
+                    league_users_fetched_lock=league_users_fetched_lock,
+                )
+            )
+
+    try:
+        submit_until_full()
+        while futures:
+            done, futures = wait(futures, timeout=0.5, return_when=FIRST_COMPLETED)
+            if not done:
+                continue
+            for future in done:
+                merge_result(future.result())
+                if expanded_users % flush_every == 0:
+                    flush_pending()
+                if progress_callback:
+                    progress_callback(
+                        expanded_users,
+                        len(leagues_by_id),
+                        len(new_league_ids),
+                        len(league_users_by_key),
+                        sum(1 for row in frontier_by_id.values() if row.expanded_at is None),
+                    )
+            submit_until_full()
+    except KeyboardInterrupt:
+        interrupted = True
+        for future in futures:
+            future.cancel()
+        raise
+    finally:
+        executor.shutdown(wait=not interrupted, cancel_futures=interrupted)
+        flush_pending()
+        store.close()
+
+    frontier_rows = sort_frontier_rows(frontier_by_id.values())
+    return SleeperFrontierExpansionResult(
+        users=sorted(users_by_id.values(), key=lambda row: row.user_id),
+        leagues=sorted(leagues_by_id.values(), key=lambda row: (row.league_season, row.league_id)),
+        league_users=sorted(
+            league_users_by_key.values(),
+            key=lambda row: (row.league_season, row.league_id, row.user_id),
+        ),
+        frontier=frontier_rows,
+        expanded_users=expanded_users,
+    )
+
+
 @dataclass(frozen=True)
 class FrontierUserFetchResult:
     frontier_row: SleeperFrontierRow
@@ -635,6 +794,9 @@ class DiscoveryTimingSnapshot:
     throttle_wait_seconds: float
     flush_count: int
     flush_seconds: float
+    retry_count: int
+    retry_wait_seconds: float
+    retry_reasons: dict[str, int]
 
 
 class DiscoveryTiming:
@@ -646,6 +808,9 @@ class DiscoveryTiming:
         self._throttle_wait_seconds = 0.0
         self._flush_count = 0
         self._flush_seconds = 0.0
+        self._retry_count = 0
+        self._retry_wait_seconds = 0.0
+        self._retry_reasons: Counter[str] = Counter()
 
     def record_request(self, seconds: float) -> None:
         with self._lock:
@@ -661,6 +826,12 @@ class DiscoveryTiming:
             self._flush_count += 1
             self._flush_seconds += seconds
 
+    def record_retry(self, reason: str, wait_seconds: float) -> None:
+        with self._lock:
+            self._retry_count += 1
+            self._retry_wait_seconds += wait_seconds
+            self._retry_reasons[reason] += 1
+
     def snapshot(self) -> DiscoveryTimingSnapshot:
         with self._lock:
             return DiscoveryTimingSnapshot(
@@ -670,13 +841,18 @@ class DiscoveryTiming:
                 throttle_wait_seconds=self._throttle_wait_seconds,
                 flush_count=self._flush_count,
                 flush_seconds=self._flush_seconds,
+                retry_count=self._retry_count,
+                retry_wait_seconds=self._retry_wait_seconds,
+                retry_reasons=dict(self._retry_reasons),
             )
 
 
-def timed_fetch_json(fetch_json: FetchJson, timing_collector: DiscoveryTiming) -> FetchJson:
+def instrument_fetch_json(fetch_json: FetchJson, timing_collector: DiscoveryTiming) -> FetchJson:
     def fetch(url: str) -> Any:
         start = time.perf_counter()
         try:
+            if fetch_json is default_fetch_json:
+                return default_fetch_json(url, retry_callback=timing_collector.record_retry)
             return fetch_json(url)
         finally:
             timing_collector.record_request(time.perf_counter() - start)
@@ -950,3 +1126,188 @@ def format_flat_value(value: Any) -> str:
     if isinstance(value, bool):
         return str(value).lower()
     return str(value)
+
+
+class SleeperDiscoveryStore:
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._connection = sqlite3.connect(self.path)
+        self._connection.execute("PRAGMA journal_mode=WAL")
+        self._connection.execute("PRAGMA synchronous=NORMAL")
+        self._init_schema()
+
+    def _init_schema(self) -> None:
+        self._create_table("users", USER_DISCOVERY_COLUMNS, ("user_id",))
+        self._create_table("leagues", LEAGUE_DISCOVERY_COLUMNS, ("league_id",))
+        self._create_table(
+            "league_users",
+            LEAGUE_USER_DISCOVERY_COLUMNS,
+            ("league_id", "user_id"),
+        )
+        self._create_table("frontier", USER_FRONTIER_COLUMNS, ("user_id",))
+
+    def _create_table(
+        self,
+        table: str,
+        columns: list[str],
+        key_columns: tuple[str, ...],
+    ) -> None:
+        column_sql = ", ".join(f"{column} TEXT" for column in columns)
+        key_sql = ", ".join(key_columns)
+        self._connection.execute(
+            f"CREATE TABLE IF NOT EXISTS {table} ({column_sql}, PRIMARY KEY ({key_sql}))"
+        )
+
+    def bootstrap_from_csv(self, csv_dir: str | Path) -> None:
+        csv_dir = Path(csv_dir)
+        self._bootstrap_table(
+            table="users",
+            path=csv_dir / "users_history.csv",
+            columns=USER_DISCOVERY_COLUMNS,
+            key_columns=("user_id",),
+        )
+        self._bootstrap_table(
+            table="leagues",
+            path=csv_dir / "leagues_history.csv",
+            columns=LEAGUE_DISCOVERY_COLUMNS,
+            key_columns=("league_id",),
+        )
+        self._bootstrap_table(
+            table="league_users",
+            path=csv_dir / "league_users_history.csv",
+            columns=LEAGUE_USER_DISCOVERY_COLUMNS,
+            key_columns=("league_id", "user_id"),
+        )
+        self._bootstrap_table(
+            table="frontier",
+            path=csv_dir / "user_frontier.csv",
+            columns=USER_FRONTIER_COLUMNS,
+            key_columns=("user_id",),
+        )
+
+    def _bootstrap_table(
+        self,
+        *,
+        table: str,
+        path: Path,
+        columns: list[str],
+        key_columns: tuple[str, ...],
+    ) -> None:
+        if not path.exists() or self._count_table(table) > 0:
+            return
+        with path.open(newline="", encoding="utf-8-sig") as file:
+            rows = [
+                {column: row.get(column, "") for column in columns}
+                for row in csv.DictReader(file)
+            ]
+        self._upsert_rows(table=table, rows=rows, columns=columns, key_columns=key_columns)
+
+    def read_frontier(self) -> list[SleeperFrontierRow]:
+        cursor = self._connection.execute(
+            f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} FROM frontier"
+        )
+        return [
+            parse_frontier_row(dict(zip(USER_FRONTIER_COLUMNS, row, strict=True)))
+            for row in cursor.fetchall()
+        ]
+
+    def read_league_ids(self) -> set[str]:
+        return {
+            row[0]
+            for row in self._connection.execute("SELECT league_id FROM leagues")
+            if row[0]
+        }
+
+    def read_league_user_ids(self) -> set[str]:
+        return {
+            row[0]
+            for row in self._connection.execute("SELECT DISTINCT league_id FROM league_users")
+            if row[0]
+        }
+
+    def count_leagues(self) -> int:
+        return self._count_table("leagues")
+
+    def upsert_discovery(
+        self,
+        *,
+        users: list[SleeperUserRow],
+        leagues: list[SleeperLeagueRow],
+        league_users: list[SleeperLeagueUserRow],
+        frontier: list[SleeperFrontierRow],
+    ) -> None:
+        with self._connection:
+            self._upsert_rows(
+                table="users",
+                rows=[format_user_row(row) for row in users],
+                columns=USER_DISCOVERY_COLUMNS,
+                key_columns=("user_id",),
+            )
+            self._upsert_rows(
+                table="leagues",
+                rows=[format_league_row(row) for row in leagues],
+                columns=LEAGUE_DISCOVERY_COLUMNS,
+                key_columns=("league_id",),
+            )
+            self._upsert_rows(
+                table="league_users",
+                rows=[format_league_user_row(row) for row in league_users],
+                columns=LEAGUE_USER_DISCOVERY_COLUMNS,
+                key_columns=("league_id", "user_id"),
+            )
+            self._upsert_rows(
+                table="frontier",
+                rows=[format_frontier_row(row) for row in frontier],
+                columns=USER_FRONTIER_COLUMNS,
+                key_columns=("user_id",),
+            )
+
+    def export_csv(self, output_dir: str | Path) -> None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        self._export_table("users", USER_DISCOVERY_COLUMNS, output_dir / "users_history.csv")
+        self._export_table("leagues", LEAGUE_DISCOVERY_COLUMNS, output_dir / "leagues_history.csv")
+        self._export_table(
+            "league_users",
+            LEAGUE_USER_DISCOVERY_COLUMNS,
+            output_dir / "league_users_history.csv",
+        )
+        self._export_table("frontier", USER_FRONTIER_COLUMNS, output_dir / "user_frontier.csv")
+
+    def _export_table(self, table: str, columns: list[str], path: Path) -> None:
+        with path.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=columns)
+            writer.writeheader()
+            cursor = self._connection.execute(f"SELECT {', '.join(columns)} FROM {table}")
+            for row in cursor:
+                writer.writerow(dict(zip(columns, row, strict=True)))
+
+    def _upsert_rows(
+        self,
+        *,
+        table: str,
+        rows: list[dict[str, str]],
+        columns: list[str],
+        key_columns: tuple[str, ...],
+    ) -> None:
+        if not rows:
+            return
+        placeholders = ", ".join("?" for _ in columns)
+        columns_sql = ", ".join(columns)
+        update_columns = [column for column in columns if column not in key_columns]
+        update_sql = ", ".join(f"{column}=excluded.{column}" for column in update_columns)
+        sql = (
+            f"INSERT INTO {table} ({columns_sql}) VALUES ({placeholders}) "
+            f"ON CONFLICT({', '.join(key_columns)}) DO UPDATE SET {update_sql}"
+        )
+        self._connection.executemany(
+            sql,
+            [tuple(row.get(column, "") for column in columns) for row in rows],
+        )
+
+    def _count_table(self, table: str) -> int:
+        return int(self._connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+
+    def close(self) -> None:
+        self._connection.close()
