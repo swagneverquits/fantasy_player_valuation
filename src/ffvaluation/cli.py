@@ -453,6 +453,37 @@ def export_sleeper_discovery_csv(
     console.print(f"Exported Sleeper discovery CSVs from {db_path} to {output_dir}")
 
 
+@app.command("import-sleeper-discovery-csv")
+def import_sleeper_discovery_csv(
+    output_dir: Path = typer.Option(
+        Path("data/raw/sleeper/discovery"),
+        "--output-dir",
+        help="Directory containing discovery CSV snapshots.",
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="SQLite discovery database path. Defaults to <output-dir>/discovery.sqlite.",
+    ),
+) -> None:
+    """Import Sleeper discovery CSV snapshots into SQLite."""
+
+    db_path = db_path or output_dir / "discovery.sqlite"
+    store = SleeperDiscoveryStore(db_path)
+    imported = store.import_csv(output_dir)
+    counts = store.table_counts()
+    store.close()
+
+    table = Table(title="Sleeper Discovery SQLite Import")
+    table.add_column("Table")
+    table.add_column("CSV rows read", justify="right")
+    table.add_column("SQLite rows", justify="right")
+    for name in ("users", "leagues", "league_users", "frontier"):
+        table.add_row(name, str(imported[name]), str(counts[name]))
+    console.print(table)
+    console.print(f"Imported Sleeper discovery CSVs into {db_path}")
+
+
 def _discovery_progress_printer(
     every: int,
     initial_leagues_history_count: int | None = None,

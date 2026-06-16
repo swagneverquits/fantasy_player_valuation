@@ -1196,12 +1196,74 @@ class SleeperDiscoveryStore:
     ) -> None:
         if not path.exists() or self._count_table(table) > 0:
             return
+        self._import_table(table=table, path=path, columns=columns, key_columns=key_columns)
+
+    def import_csv(self, csv_dir: str | Path) -> dict[str, int]:
+        csv_dir = Path(csv_dir)
+        return {
+            "users": self._import_table(
+                table="users",
+                path=csv_dir / "users_history.csv",
+                columns=USER_DISCOVERY_COLUMNS,
+                key_columns=("user_id",),
+            ),
+            "leagues": self._import_table(
+                table="leagues",
+                path=csv_dir / "leagues_history.csv",
+                columns=LEAGUE_DISCOVERY_COLUMNS,
+                key_columns=("league_id",),
+            ),
+            "league_users": self._import_table(
+                table="league_users",
+                path=csv_dir / "league_users_history.csv",
+                columns=LEAGUE_USER_DISCOVERY_COLUMNS,
+                key_columns=("league_id", "user_id"),
+            ),
+            "frontier": self._import_table(
+                table="frontier",
+                path=csv_dir / "user_frontier.csv",
+                columns=USER_FRONTIER_COLUMNS,
+                key_columns=("user_id",),
+            ),
+        }
+
+    def _import_table(
+        self,
+        *,
+        table: str,
+        path: Path,
+        columns: list[str],
+        key_columns: tuple[str, ...],
+        batch_size: int = 10_000,
+    ) -> int:
+        if not path.exists():
+            return 0
+
+        imported = 0
+        batch: list[dict[str, str]] = []
         with path.open(newline="", encoding="utf-8-sig") as file:
-            rows = [
-                {column: row.get(column, "") for column in columns}
-                for row in csv.DictReader(file)
-            ]
-        self._upsert_rows(table=table, rows=rows, columns=columns, key_columns=key_columns)
+            for row in csv.DictReader(file):
+                batch.append({column: row.get(column, "") for column in columns})
+                if len(batch) >= batch_size:
+                    self._upsert_rows(
+                        table=table,
+                        rows=batch,
+                        columns=columns,
+                        key_columns=key_columns,
+                    )
+                    imported += len(batch)
+                    batch = []
+
+        if batch:
+            self._upsert_rows(
+                table=table,
+                rows=batch,
+                columns=columns,
+                key_columns=key_columns,
+            )
+            imported += len(batch)
+        self._connection.commit()
+        return imported
 
     def read_frontier(self) -> list[SleeperFrontierRow]:
         cursor = self._connection.execute(
@@ -1228,6 +1290,14 @@ class SleeperDiscoveryStore:
 
     def count_leagues(self) -> int:
         return self._count_table("leagues")
+
+    def table_counts(self) -> dict[str, int]:
+        return {
+            "users": self._count_table("users"),
+            "leagues": self._count_table("leagues"),
+            "league_users": self._count_table("league_users"),
+            "frontier": self._count_table("frontier"),
+        }
 
     def upsert_discovery(
         self,
