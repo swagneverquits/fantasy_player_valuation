@@ -155,7 +155,7 @@ ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50 --flush-
 For concurrent discovery, use a small worker pool with a global request throttle:
 
 ```powershell
-ffvaluation expand-sleeper-network --max-users 5000 --workers 5 --requests-per-minute 500 --progress-every 50 --flush-every 25
+ffvaluation expand-sleeper-network --max-users 5000 --workers 5 --requests-per-minute 500 --progress-every 50 --flush-every 25 --timing
 ```
 
 Default outputs:
@@ -176,4 +176,5 @@ instead of storing JSON blobs.
 
 Use `--flush-every 1` for maximum crash safety or a larger value for less disk
 churn during long crawls. `--sleep-seconds` applies to serial mode; concurrent
-mode uses `--requests-per-minute` instead.
+mode uses `--requests-per-minute` instead. Use `--timing` to print request,
+throttle, flush, and yield telemetry as a progress table.

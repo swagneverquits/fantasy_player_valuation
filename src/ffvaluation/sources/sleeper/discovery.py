@@ -53,10 +53,13 @@ def discover_league_network(
     captured_at: datetime | None = None,
     sleep_seconds: float = 0.1,
     progress_callback: DiscoveryProgressCallback | None = None,
+    timing_collector: DiscoveryTiming | None = None,
     fetch_json: FetchJson | None = None,
 ) -> SleeperDiscoveryResult:
     captured_at = captured_at or datetime.now(UTC)
     fetch_json = fetch_json or default_fetch_json
+    if timing_collector is not None:
+        fetch_json = timed_fetch_json(fetch_json, timing_collector)
     users_by_id: dict[str, SleeperUserRow] = {}
     leagues_by_id: dict[str, SleeperLeagueRow] = {}
     league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
@@ -178,10 +181,13 @@ def expand_user_frontier(
     workers: int = 1,
     requests_per_minute: int | None = None,
     progress_callback: DiscoveryProgressCallback | None = None,
+    timing_collector: DiscoveryTiming | None = None,
     fetch_json: FetchJson | None = None,
 ) -> SleeperFrontierExpansionResult:
     captured_at = captured_at or datetime.now(UTC)
     fetch_json = fetch_json or default_fetch_json
+    if timing_collector is not None:
+        fetch_json = timed_fetch_json(fetch_json, timing_collector)
     workers = max(workers, 1)
     if workers > 1:
         if max_leagues is not None:
@@ -198,6 +204,7 @@ def expand_user_frontier(
             workers=workers,
             requests_per_minute=requests_per_minute or 500,
             progress_callback=progress_callback,
+            timing_collector=timing_collector,
             fetch_json=fetch_json,
         )
 
@@ -314,6 +321,7 @@ def expand_user_frontier(
                 leagues_path=leagues_path,
                 league_users_path=league_users_path,
                 frontier_path=frontier_path,
+                timing_collector=timing_collector,
             )
             pending_users = []
             pending_leagues = []
@@ -338,6 +346,7 @@ def expand_user_frontier(
         leagues_path=leagues_path,
         league_users_path=league_users_path,
         frontier_path=frontier_path,
+        timing_collector=timing_collector,
     )
     return SleeperFrontierExpansionResult(
         users=sorted(users_by_id.values(), key=lambda row: row.user_id),
@@ -364,6 +373,7 @@ def expand_user_frontier_parallel(
     workers: int,
     requests_per_minute: int,
     progress_callback: DiscoveryProgressCallback | None,
+    timing_collector: DiscoveryTiming | None,
     fetch_json: FetchJson,
 ) -> SleeperFrontierExpansionResult:
     frontier = read_user_frontier_csv(frontier_path)
@@ -388,7 +398,7 @@ def expand_user_frontier_parallel(
     existing_league_ids = read_league_ids_csv(leagues_path) if leagues_path is not None else set()
     new_league_ids: set[str] = set()
     league_users_fetched_lock = Lock()
-    throttle = RequestThrottle(requests_per_minute)
+    throttle = RequestThrottle(requests_per_minute, timing_collector=timing_collector)
     seasons = [str(season) for season in seasons]
     flush_every = max(flush_every, 1)
     pending_users: list[SleeperUserRow] = []
@@ -438,6 +448,7 @@ def expand_user_frontier_parallel(
             leagues_path=leagues_path,
             league_users_path=league_users_path,
             frontier_path=frontier_path,
+            timing_collector=timing_collector,
         )
         pending_users = []
         pending_leagues = []
@@ -595,10 +606,15 @@ def fetch_frontier_user(
 
 
 class RequestThrottle:
-    def __init__(self, requests_per_minute: int) -> None:
+    def __init__(
+        self,
+        requests_per_minute: int,
+        timing_collector: DiscoveryTiming | None = None,
+    ) -> None:
         self._spacing_seconds = 60 / max(requests_per_minute, 1)
         self._lock = Lock()
         self._next_request_at = 0.0
+        self._timing_collector = timing_collector
 
     def acquire(self) -> None:
         with self._lock:
@@ -606,7 +622,66 @@ class RequestThrottle:
             wait_seconds = max(0.0, self._next_request_at - now)
             self._next_request_at = max(now, self._next_request_at) + self._spacing_seconds
         if wait_seconds > 0:
+            if self._timing_collector is not None:
+                self._timing_collector.record_throttle_wait(wait_seconds)
             time.sleep(wait_seconds)
+
+
+@dataclass(frozen=True)
+class DiscoveryTimingSnapshot:
+    elapsed_seconds: float
+    request_count: int
+    request_seconds: float
+    throttle_wait_seconds: float
+    flush_count: int
+    flush_seconds: float
+
+
+class DiscoveryTiming:
+    def __init__(self) -> None:
+        self._started_at = time.perf_counter()
+        self._lock = Lock()
+        self._request_count = 0
+        self._request_seconds = 0.0
+        self._throttle_wait_seconds = 0.0
+        self._flush_count = 0
+        self._flush_seconds = 0.0
+
+    def record_request(self, seconds: float) -> None:
+        with self._lock:
+            self._request_count += 1
+            self._request_seconds += seconds
+
+    def record_throttle_wait(self, seconds: float) -> None:
+        with self._lock:
+            self._throttle_wait_seconds += seconds
+
+    def record_flush(self, seconds: float) -> None:
+        with self._lock:
+            self._flush_count += 1
+            self._flush_seconds += seconds
+
+    def snapshot(self) -> DiscoveryTimingSnapshot:
+        with self._lock:
+            return DiscoveryTimingSnapshot(
+                elapsed_seconds=time.perf_counter() - self._started_at,
+                request_count=self._request_count,
+                request_seconds=self._request_seconds,
+                throttle_wait_seconds=self._throttle_wait_seconds,
+                flush_count=self._flush_count,
+                flush_seconds=self._flush_seconds,
+            )
+
+
+def timed_fetch_json(fetch_json: FetchJson, timing_collector: DiscoveryTiming) -> FetchJson:
+    def fetch(url: str) -> Any:
+        start = time.perf_counter()
+        try:
+            return fetch_json(url)
+        finally:
+            timing_collector.record_request(time.perf_counter() - start)
+
+    return fetch
 
 
 def read_user_frontier_csv(path: str | Path) -> list[SleeperFrontierRow]:
@@ -639,14 +714,20 @@ def flush_discovery_progress(
     leagues_path: str | Path | None,
     league_users_path: str | Path | None,
     frontier_path: str | Path,
+    timing_collector: DiscoveryTiming | None = None,
 ) -> None:
-    if users_path is not None and users:
-        upsert_user_discovery_csv(users, users_path)
-    if leagues_path is not None and leagues:
-        upsert_league_discovery_csv(leagues, leagues_path)
-    if league_users_path is not None and league_users:
-        upsert_league_user_discovery_csv(league_users, league_users_path)
-    upsert_user_frontier_csv(frontier, frontier_path)
+    start = time.perf_counter()
+    try:
+        if users_path is not None and users:
+            upsert_user_discovery_csv(users, users_path)
+        if leagues_path is not None and leagues:
+            upsert_league_discovery_csv(leagues, leagues_path)
+        if league_users_path is not None and league_users:
+            upsert_league_user_discovery_csv(league_users, league_users_path)
+        upsert_user_frontier_csv(frontier, frontier_path)
+    finally:
+        if timing_collector is not None:
+            timing_collector.record_flush(time.perf_counter() - start)
 
 
 def sort_frontier_rows(rows: Iterable[SleeperFrontierRow]) -> list[SleeperFrontierRow]:

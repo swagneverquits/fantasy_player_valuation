@@ -2,6 +2,7 @@
 
 from ffvaluation.sources.sleeper.client import (
     BASE_URL,
+    DiscoveryTiming,
     SleeperDiscoveryResult,
     SleeperFrontierExpansionResult,
     SleeperFrontierRow,
@@ -24,6 +25,7 @@ from ffvaluation.sources.sleeper.client import (
 
 __all__ = [
     "BASE_URL",
+    "DiscoveryTiming",
     "SleeperDiscoveryResult",
     "SleeperFrontierExpansionResult",
     "SleeperFrontierRow",

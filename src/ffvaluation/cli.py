@@ -16,6 +16,7 @@ from ffvaluation.sources.rosteraudit import (
     pull_value_history_csv_incremental,
 )
 from ffvaluation.sources.sleeper import (
+    DiscoveryTiming,
     discover_league_network,
     expand_user_frontier,
     fetch_trade_history,
@@ -359,6 +360,11 @@ def expand_sleeper_network(
         "--requests-per-minute",
         help="Global request throttle for concurrent mode. Defaults to 500 when workers > 1.",
     ),
+    timing: bool = typer.Option(
+        False,
+        "--timing",
+        help="Print request, throttle, and flush timing telemetry with progress.",
+    ),
 ) -> None:
     """Expand the persistent Sleeper user frontier."""
 
@@ -371,6 +377,7 @@ def expand_sleeper_network(
     users_path = output_dir / "users_history.csv"
     leagues_path = output_dir / "leagues_history.csv"
     league_users_path = output_dir / "league_users_history.csv"
+    timing_collector = DiscoveryTiming() if timing else None
     result = expand_user_frontier(
         frontier_path=frontier_path,
         seasons=season,
@@ -386,7 +393,9 @@ def expand_sleeper_network(
         progress_callback=_discovery_progress_printer(
             progress_every,
             initial_leagues_history_count=_count_csv_rows(leagues_path),
+            timing_collector=timing_collector,
         ),
+        timing_collector=timing_collector,
     )
 
     target_leagues = sum(1 for league in result.leagues if league.target_format_guess)
@@ -403,6 +412,7 @@ def expand_sleeper_network(
 def _discovery_progress_printer(
     every: int,
     initial_leagues_history_count: int | None = None,
+    timing_collector: DiscoveryTiming | None = None,
 ):
     if every <= 0:
         return None
@@ -415,19 +425,94 @@ def _discovery_progress_printer(
         queued_users: int,
     ) -> None:
         if users == 1 or users % every == 0:
-            leagues_history_count = ""
+            estimated_rows = None
             if initial_leagues_history_count is not None:
                 estimated_rows = initial_leagues_history_count + new_leagues
-                leagues_history_count = f", leagues_history ~{estimated_rows} rows"
+            if timing_collector is None:
+                leagues_history_count = (
+                    f", leagues_history ~{estimated_rows} rows"
+                    if estimated_rows is not None
+                    else ""
+                )
+                console.print(
+                    "Sleeper discovery: "
+                    f"{users} users, {leagues_seen} leagues seen, {new_leagues} new leagues, "
+                    f"{league_users} league-user edges, "
+                    f"{queued_users} queued"
+                    f"{leagues_history_count}"
+                )
+                return
+
+            console.print()
             console.print(
-                "Sleeper discovery: "
-                f"{users} users, {leagues_seen} leagues seen, {new_leagues} new leagues, "
-                f"{league_users} league-user edges, "
-                f"{queued_users} queued"
-                f"{leagues_history_count}"
+                _discovery_timing_table(
+                    users=users,
+                    leagues_seen=leagues_seen,
+                    new_leagues=new_leagues,
+                    league_users=league_users,
+                    queued_users=queued_users,
+                    estimated_rows=estimated_rows,
+                    timing_collector=timing_collector,
+                )
             )
 
     return print_progress
+
+
+def _discovery_timing_table(
+    *,
+    users: int,
+    leagues_seen: int,
+    new_leagues: int,
+    league_users: int,
+    queued_users: int,
+    estimated_rows: int | None,
+    timing_collector: DiscoveryTiming,
+) -> Table:
+    snapshot = timing_collector.snapshot()
+    elapsed_minutes = max(snapshot.elapsed_seconds / 60, 1e-9)
+    total_tracked_seconds = (
+        snapshot.request_seconds + snapshot.throttle_wait_seconds + snapshot.flush_seconds
+    )
+    table = Table(title="Sleeper Discovery Progress")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+
+    table.add_row("Users expanded", str(users))
+    table.add_row("Leagues seen", str(leagues_seen))
+    table.add_row("New leagues", str(new_leagues))
+    table.add_row("League-user edges", str(league_users))
+    table.add_row("Queued users", str(queued_users))
+    if estimated_rows is not None:
+        table.add_row("Leagues history est.", f"~{estimated_rows}")
+    table.add_row("Requests", str(snapshot.request_count))
+    table.add_row("Requests/min", f"{snapshot.request_count / elapsed_minutes:.1f}")
+    table.add_row("Avg request", _format_seconds(_safe_div(snapshot.request_seconds, snapshot.request_count)))
+    table.add_row("HTTP time", _format_seconds(snapshot.request_seconds))
+    table.add_row("Throttle wait", _format_seconds(snapshot.throttle_wait_seconds))
+    table.add_row("Flush time", _format_seconds(snapshot.flush_seconds))
+    table.add_row("Flushes", str(snapshot.flush_count))
+    table.add_row("New leagues/user", f"{_safe_div(new_leagues, users):.2f}")
+    if total_tracked_seconds > 0:
+        table.add_row("HTTP share", f"{snapshot.request_seconds / total_tracked_seconds:.1%}")
+        table.add_row(
+            "Throttle share",
+            f"{snapshot.throttle_wait_seconds / total_tracked_seconds:.1%}",
+        )
+        table.add_row("Flush share", f"{snapshot.flush_seconds / total_tracked_seconds:.1%}")
+    return table
+
+
+def _safe_div(numerator: float, denominator: float) -> float:
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
+
+
+def _format_seconds(seconds: float) -> str:
+    if seconds < 1:
+        return f"{seconds * 1000:.0f} ms"
+    return f"{seconds:.1f} s"
 
 
 def _count_csv_rows(path: Path) -> int:
