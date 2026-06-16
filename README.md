@@ -64,10 +64,7 @@ data/
       value_history/
     sleeper/
       discovery/
-        user_frontier.csv
-        users_history.csv
-        leagues_history.csv
-        league_users_history.csv
+        discovery.sqlite
       trades/
         history.csv
   scratch/
@@ -145,8 +142,8 @@ ffvaluation expand-sleeper-network
 
 Each expansion processes unexpanded frontier users, discovers their leagues,
 adds league users back to the frontier, skips league-user API calls for leagues
-already present in `league_users_history.csv`, and upserts discovery CSVs in
-batches. For a larger batch:
+already present in SQLite, and upserts discovery state in batches. For a larger
+batch:
 
 ```powershell
 ffvaluation expand-sleeper-network --max-users 5000 --progress-every 50 --flush-every 25
@@ -158,17 +155,11 @@ For concurrent discovery, use a small worker pool with a global request throttle
 ffvaluation expand-sleeper-network --max-users 5000 --workers 5 --requests-per-minute 500 --progress-every 50 --flush-every 25 --timing
 ```
 
-Discovery expansion writes live state to SQLite by default. This is the
-canonical discovery store:
+Discovery expansion writes live state to SQLite. This is the canonical discovery
+store:
 
 ```text
 data/raw/sleeper/discovery/discovery.sqlite
-```
-
-Import existing CSV snapshots into SQLite:
-
-```powershell
-ffvaluation import-sleeper-discovery-csv
 ```
 
 Query SQLite directly from PowerShell:
@@ -177,30 +168,13 @@ Query SQLite directly from PowerShell:
 sqlite3 data/raw/sleeper/discovery/discovery.sqlite "select count(*) from leagues;"
 ```
 
-Refresh human-readable CSV snapshots only when needed:
-
-```powershell
-ffvaluation export-sleeper-discovery-csv
-```
-
-Default outputs:
-
-```text
-data/raw/sleeper/discovery/users_history.csv
-data/raw/sleeper/discovery/leagues_history.csv
-data/raw/sleeper/discovery/league_users_history.csv
-data/raw/sleeper/discovery/user_frontier.csv
-```
-
-Discovery history tables use date-level capture columns to keep the raw files
-compact. `users_history.csv` stores `captured_date,user_id,display_name`, and
-`league_users_history.csv` is a lean edge table:
-`captured_date,league_id,league_season,user_id`. `leagues_history.csv` flattens
-league settings, scoring settings, and roster slot counts into prefixed columns
-instead of storing JSON blobs.
+Discovery tables use date-level capture columns to keep storage compact. The
+`users` table stores `captured_date,user_id,display_name`, and `league_users` is
+a lean edge table: `captured_date,league_id,league_season,user_id`. `leagues`
+flattens league settings, scoring settings, and roster slot counts into typed
+prefixed columns instead of storing JSON blobs.
 
 Use `--flush-every 1` for maximum crash safety or a larger value for less disk
 churn during long crawls. Concurrent mode uses `--requests-per-minute`. Use
 `--timing` to print request, retry, throttle, flush, and yield telemetry as a
-progress table. CSV snapshots are optional exports; they are not required for
-normal crawling.
+progress table.
