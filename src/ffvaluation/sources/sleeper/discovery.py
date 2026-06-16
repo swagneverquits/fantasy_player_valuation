@@ -1128,6 +1128,67 @@ def format_flat_value(value: Any) -> str:
     return str(value)
 
 
+BOOLEAN_DISCOVERY_COLUMNS = {
+    "is_dynasty",
+    "is_superflex",
+    "target_format_guess",
+}
+INTEGER_DISCOVERY_COLUMNS = {
+    "league_season",
+    "total_rosters",
+    *[f"league_setting_{key}" for key in LEAGUE_SETTING_KEYS],
+    *[f"roster_{key}" for key in ROSTER_POSITION_KEYS],
+}
+REAL_DISCOVERY_COLUMNS = {
+    "ppr",
+    "te_premium",
+    *[f"scoring_{key}" for key in SCORING_SETTING_KEYS],
+}
+
+
+def discovery_sqlite_type(column: str) -> str:
+    if column in BOOLEAN_DISCOVERY_COLUMNS or column in INTEGER_DISCOVERY_COLUMNS:
+        return "INTEGER"
+    if column in REAL_DISCOVERY_COLUMNS:
+        return "REAL"
+    return "TEXT"
+
+
+def coerce_discovery_value(column: str, value: Any) -> str | int | float | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+    if value == "":
+        return None
+    if column in BOOLEAN_DISCOVERY_COLUMNS:
+        if isinstance(value, bool):
+            return int(value)
+        value_text = str(value).lower()
+        if value_text == "true":
+            return 1
+        if value_text == "false":
+            return 0
+        return int(float(value_text))
+    if column in INTEGER_DISCOVERY_COLUMNS:
+        return int(float(value))
+    if column in REAL_DISCOVERY_COLUMNS:
+        return float(value)
+    return str(value)
+
+
+def format_discovery_value(column: str, value: Any) -> str:
+    if value is None:
+        return ""
+    if column in BOOLEAN_DISCOVERY_COLUMNS:
+        return "true" if int(value) else "false"
+    if column in INTEGER_DISCOVERY_COLUMNS:
+        return str(int(value))
+    if column in REAL_DISCOVERY_COLUMNS:
+        return f"{float(value):g}"
+    return str(value)
+
+
 class SleeperDiscoveryStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -1153,10 +1214,11 @@ class SleeperDiscoveryStore:
         columns: list[str],
         key_columns: tuple[str, ...],
     ) -> None:
-        column_sql = ", ".join(f"{column} TEXT" for column in columns)
+        column_sql = ", ".join(f"{column} {discovery_sqlite_type(column)}" for column in columns)
         key_sql = ", ".join(key_columns)
         self._connection.execute(
-            f"CREATE TABLE IF NOT EXISTS {table} ({column_sql}, PRIMARY KEY ({key_sql}))"
+            f"CREATE TABLE IF NOT EXISTS {table} "
+            f"({column_sql}, PRIMARY KEY ({key_sql})) WITHOUT ROWID"
         )
 
     def bootstrap_from_csv(self, csv_dir: str | Path) -> None:
@@ -1270,7 +1332,12 @@ class SleeperDiscoveryStore:
             f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} FROM frontier"
         )
         return [
-            parse_frontier_row(dict(zip(USER_FRONTIER_COLUMNS, row, strict=True)))
+            parse_frontier_row(
+                {
+                    column: format_discovery_value(column, value)
+                    for column, value in zip(USER_FRONTIER_COLUMNS, row, strict=True)
+                }
+            )
             for row in cursor.fetchall()
         ]
 
@@ -1351,7 +1418,12 @@ class SleeperDiscoveryStore:
             writer.writeheader()
             cursor = self._connection.execute(f"SELECT {', '.join(columns)} FROM {table}")
             for row in cursor:
-                writer.writerow(dict(zip(columns, row, strict=True)))
+                writer.writerow(
+                    {
+                        column: format_discovery_value(column, value)
+                        for column, value in zip(columns, row, strict=True)
+                    }
+                )
 
     def _upsert_rows(
         self,
@@ -1373,11 +1445,15 @@ class SleeperDiscoveryStore:
         )
         self._connection.executemany(
             sql,
-            [tuple(row.get(column, "") for column in columns) for row in rows],
+            [
+                tuple(coerce_discovery_value(column, row.get(column, "")) for column in columns)
+                for row in rows
+            ],
         )
 
     def _count_table(self, table: str) -> int:
         return int(self._connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
     def close(self) -> None:
+        self._connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         self._connection.close()
