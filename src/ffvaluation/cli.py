@@ -407,15 +407,22 @@ def _discovery_progress_printer(
     if every <= 0:
         return None
 
-    def print_progress(users: int, leagues: int, league_users: int, queued_users: int) -> None:
+    def print_progress(
+        users: int,
+        leagues_seen: int,
+        new_leagues: int,
+        league_users: int,
+        queued_users: int,
+    ) -> None:
         if users == 1 or users % every == 0:
             leagues_history_count = ""
             if initial_leagues_history_count is not None:
-                estimated_rows = initial_leagues_history_count + leagues
+                estimated_rows = initial_leagues_history_count + new_leagues
                 leagues_history_count = f", leagues_history ~{estimated_rows} rows"
             console.print(
                 "Sleeper discovery: "
-                f"{users} users, {leagues} leagues, {league_users} league-user edges, "
+                f"{users} users, {leagues_seen} leagues seen, {new_leagues} new leagues, "
+                f"{league_users} league-user edges, "
                 f"{queued_users} queued"
                 f"{leagues_history_count}"
             )

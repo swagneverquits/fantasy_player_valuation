@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 BASE_URL = "https://api.sleeper.app/v1"
 
 FetchJson = Callable[[str], Any]
-DiscoveryProgressCallback = Callable[[int, int, int, int], None]
+DiscoveryProgressCallback = Callable[[int, int, int, int, int], None]
 
 
 def league_url(league_id: str) -> str:

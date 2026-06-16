@@ -126,6 +126,7 @@ def discover_league_network(
             progress_callback(
                 len(seen_user_ids),
                 len(leagues_by_id),
+                len(leagues_by_id),
                 len(league_users_by_key),
                 len(queue),
             )
@@ -208,6 +209,8 @@ def expand_user_frontier(
     league_users_fetched = (
         read_league_user_ids_csv(league_users_path) if league_users_path is not None else set()
     )
+    existing_league_ids = read_league_ids_csv(leagues_path) if leagues_path is not None else set()
+    new_league_ids: set[str] = set()
     pending_users: list[SleeperUserRow] = []
     pending_leagues: list[SleeperLeagueRow] = []
     pending_league_users: list[SleeperLeagueUserRow] = []
@@ -248,6 +251,8 @@ def expand_user_frontier(
                 parsed_league = league_row(captured_at=captured_at, league=league)
                 leagues_by_id[league_id] = parsed_league
                 batch_leagues.append(parsed_league)
+                if league_id not in existing_league_ids:
+                    new_league_ids.add(league_id)
                 if max_leagues is not None and len(leagues_by_id) >= max_leagues:
                     break
 
@@ -318,6 +323,7 @@ def expand_user_frontier(
             progress_callback(
                 expanded_users,
                 len(leagues_by_id),
+                len(new_league_ids),
                 len(league_users_by_key),
                 sum(1 for row in frontier_by_id.values() if row.expanded_at is None),
             )
@@ -379,6 +385,8 @@ def expand_user_frontier_parallel(
     league_users_fetched = (
         read_league_user_ids_csv(league_users_path) if league_users_path is not None else set()
     )
+    existing_league_ids = read_league_ids_csv(leagues_path) if leagues_path is not None else set()
+    new_league_ids: set[str] = set()
     league_users_fetched_lock = Lock()
     throttle = RequestThrottle(requests_per_minute)
     seasons = [str(season) for season in seasons]
@@ -398,6 +406,8 @@ def expand_user_frontier_parallel(
             users_by_id[user.user_id] = user
         for league in result.leagues:
             leagues_by_id[league.league_id] = league
+            if league.league_id not in existing_league_ids:
+                new_league_ids.add(league.league_id)
         for league_user in result.league_users:
             league_users_by_key[(league_user.league_id, league_user.user_id)] = league_user
         for frontier_row in result.discovered_frontier:
@@ -473,6 +483,7 @@ def expand_user_frontier_parallel(
                     progress_callback(
                         expanded_users,
                         len(leagues_by_id),
+                        len(new_league_ids),
                         len(league_users_by_key),
                         sum(1 for row in frontier_by_id.values() if row.expanded_at is None),
                     )
@@ -684,6 +695,20 @@ def upsert_league_user_discovery_csv(
 
 
 def read_league_user_ids_csv(path: str | Path) -> set[str]:
+    path = Path(path)
+    if not path.exists():
+        return set()
+
+    league_ids: set[str] = set()
+    with path.open(newline="", encoding="utf-8-sig") as file:
+        for row in csv.DictReader(file):
+            league_id = row.get("league_id", "").strip()
+            if league_id:
+                league_ids.add(league_id)
+    return league_ids
+
+
+def read_league_ids_csv(path: str | Path) -> set[str]:
     path = Path(path)
     if not path.exists():
         return set()
