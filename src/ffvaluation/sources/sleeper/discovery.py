@@ -112,6 +112,8 @@ def expand_user_frontier_sqlite(
     pending_users: list[SleeperUserRow] = []
     pending_leagues: list[SleeperLeagueRow] = []
     pending_league_users: list[SleeperLeagueUserRow] = []
+    pending_frontier_by_id: dict[str, SleeperFrontierRow] = {}
+    unexpanded_frontier_count = sum(1 for row in frontier_by_id.values() if row.expanded_at is None)
     expanded_users = 0
 
     def throttled_fetch_json(url: str) -> Any:
@@ -119,7 +121,7 @@ def expand_user_frontier_sqlite(
         return fetch_json(url)
 
     def merge_result(result: FrontierUserFetchResult) -> None:
-        nonlocal expanded_users
+        nonlocal expanded_users, unexpanded_frontier_count
         for user in result.users:
             users_by_id[user.user_id] = user
         for league in result.leagues:
@@ -131,7 +133,9 @@ def expand_user_frontier_sqlite(
         for frontier_row in result.discovered_frontier:
             if frontier_row.user_id not in frontier_by_id:
                 frontier_by_id[frontier_row.user_id] = frontier_row
-        frontier_by_id[result.frontier_row.user_id] = SleeperFrontierRow(
+                pending_frontier_by_id[frontier_row.user_id] = frontier_row
+                unexpanded_frontier_count += 1
+        expanded_frontier_row = SleeperFrontierRow(
             user_id=result.frontier_row.user_id,
             username=result.frontier_row.username,
             display_name=result.frontier_row.display_name,
@@ -139,20 +143,24 @@ def expand_user_frontier_sqlite(
             discovered_from_league_id=result.frontier_row.discovered_from_league_id,
             expanded_at=captured_at,
         )
+        if frontier_by_id[result.frontier_row.user_id].expanded_at is None:
+            unexpanded_frontier_count -= 1
+        frontier_by_id[result.frontier_row.user_id] = expanded_frontier_row
+        pending_frontier_by_id[result.frontier_row.user_id] = expanded_frontier_row
         expanded_users += 1
         pending_users.extend(result.users)
         pending_leagues.extend(result.leagues)
         pending_league_users.extend(result.league_users)
 
     def flush_pending() -> None:
-        nonlocal pending_users, pending_leagues, pending_league_users
+        nonlocal pending_users, pending_leagues, pending_league_users, pending_frontier_by_id
         start = time.perf_counter()
         try:
             store.upsert_discovery(
                 users=pending_users,
                 leagues=pending_leagues,
                 league_users=pending_league_users,
-                frontier=sort_frontier_rows(frontier_by_id.values()),
+                frontier=sort_frontier_rows(pending_frontier_by_id.values()),
             )
         finally:
             if timing_collector is not None:
@@ -160,6 +168,7 @@ def expand_user_frontier_sqlite(
         pending_users = []
         pending_leagues = []
         pending_league_users = []
+        pending_frontier_by_id = {}
 
     work_iter = iter(work_rows)
     futures: set[Future[FrontierUserFetchResult]] = set()
@@ -200,7 +209,7 @@ def expand_user_frontier_sqlite(
                         len(leagues_by_id),
                         len(new_league_ids),
                         len(league_users_by_key),
-                        sum(1 for row in frontier_by_id.values() if row.expanded_at is None),
+                        unexpanded_frontier_count,
                     )
             submit_until_full()
     except KeyboardInterrupt:
