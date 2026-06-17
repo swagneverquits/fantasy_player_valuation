@@ -49,6 +49,7 @@ def seed_user_frontier(
     captured_at: datetime | None = None,
     fetch_json: FetchJson | None = None,
 ) -> SleeperFrontierRow:
+    """Add a Sleeper user to the SQLite discovery frontier."""
     captured_at = captured_at or datetime.now(UTC)
     fetch_json = fetch_json or default_fetch_json
     user = fetch_json(user_url(seed_user))
@@ -84,6 +85,7 @@ def expand_user_frontier_sqlite(
     timing_collector: DiscoveryTiming | None = None,
     fetch_json: FetchJson | None = None,
 ) -> SleeperFrontierExpansionResult:
+    """Expand unprocessed Sleeper frontier users into leagues and league-user edges."""
     captured_at = captured_at or datetime.now(UTC)
     fetch_json = fetch_json or default_fetch_json
     if timing_collector is not None:
@@ -113,10 +115,12 @@ def expand_user_frontier_sqlite(
     expanded_users = 0
 
     def throttled_fetch_json(url: str) -> Any:
+        """Fetch JSON through the shared request throttle."""
         throttle.acquire()
         return fetch_json(url)
 
     def merge_result(result: FrontierUserFetchResult) -> None:
+        """Merge one fetched frontier user into pending in-memory state."""
         nonlocal expanded_users, unexpanded_frontier_count
         for user in result.users:
             users_by_id[user.user_id] = user
@@ -150,6 +154,7 @@ def expand_user_frontier_sqlite(
         pending_league_users.extend(result.league_users)
 
     def flush_pending() -> None:
+        """Persist pending discovery rows to SQLite."""
         nonlocal pending_users, pending_leagues, pending_league_users, pending_frontier_by_id
         start = time.perf_counter()
         try:
@@ -173,6 +178,7 @@ def expand_user_frontier_sqlite(
     interrupted = False
 
     def submit_until_full() -> None:
+        """Submit frontier fetch jobs until the worker pool is full."""
         while len(futures) < workers:
             try:
                 row = next(work_iter)
@@ -249,6 +255,7 @@ def fetch_frontier_user(
     league_users_fetched: set[str],
     league_users_fetched_lock: Lock,
 ) -> FrontierUserFetchResult:
+    """Fetch leagues and leaguemates for one frontier user."""
     users: dict[str, SleeperUserRow] = {
         frontier_row.user_id: SleeperUserRow(
             captured_at=captured_at,
@@ -320,12 +327,14 @@ class RequestThrottle:
         requests_per_minute: int,
         timing_collector: DiscoveryTiming | None = None,
     ) -> None:
+        """Create a thread-safe fixed-interval request throttle."""
         self._spacing_seconds = 60 / max(requests_per_minute, 1)
         self._lock = Lock()
         self._next_request_at = 0.0
         self._timing_collector = timing_collector
 
     def acquire(self) -> None:
+        """Wait until the next request is allowed."""
         with self._lock:
             now = time.monotonic()
             wait_seconds = max(0.0, self._next_request_at - now)
@@ -351,6 +360,7 @@ class DiscoveryTimingSnapshot:
 
 class DiscoveryTiming:
     def __init__(self) -> None:
+        """Start a thread-safe discovery timing collector."""
         self._started_at = time.perf_counter()
         self._lock = Lock()
         self._request_count = 0
@@ -363,26 +373,31 @@ class DiscoveryTiming:
         self._retry_reasons: Counter[str] = Counter()
 
     def record_request(self, seconds: float) -> None:
+        """Record elapsed time for one HTTP request."""
         with self._lock:
             self._request_count += 1
             self._request_seconds += seconds
 
     def record_throttle_wait(self, seconds: float) -> None:
+        """Record time spent waiting on the request throttle."""
         with self._lock:
             self._throttle_wait_seconds += seconds
 
     def record_flush(self, seconds: float) -> None:
+        """Record elapsed time for one SQLite flush."""
         with self._lock:
             self._flush_count += 1
             self._flush_seconds += seconds
 
     def record_retry(self, reason: str, wait_seconds: float) -> None:
+        """Record a retry reason and its backoff wait."""
         with self._lock:
             self._retry_count += 1
             self._retry_wait_seconds += wait_seconds
             self._retry_reasons[reason] += 1
 
     def snapshot(self) -> DiscoveryTimingSnapshot:
+        """Return a consistent snapshot of timing counters."""
         with self._lock:
             return DiscoveryTimingSnapshot(
                 elapsed_seconds=time.perf_counter() - self._started_at,
@@ -398,7 +413,9 @@ class DiscoveryTiming:
 
 
 def instrument_fetch_json(fetch_json: FetchJson, timing_collector: DiscoveryTiming) -> FetchJson:
+    """Wrap a JSON fetcher with request timing and retry telemetry."""
     def fetch(url: str) -> Any:
+        """Fetch one URL and record elapsed request time."""
         start = time.perf_counter()
         try:
             if fetch_json is default_fetch_json:
@@ -411,6 +428,7 @@ def instrument_fetch_json(fetch_json: FetchJson, timing_collector: DiscoveryTimi
 
 
 def sort_frontier_rows(rows: Iterable[SleeperFrontierRow]) -> list[SleeperFrontierRow]:
+    """Sort frontier rows with unexpanded users first."""
     return sorted(
         rows,
         key=lambda row: (
@@ -423,6 +441,7 @@ def sort_frontier_rows(rows: Iterable[SleeperFrontierRow]) -> list[SleeperFronti
 
 
 def user_row(*, captured_at: datetime, user: dict[str, Any]) -> SleeperUserRow:
+    """Parse a Sleeper user payload into a discovery user row."""
     resolved_user_id = user_id(user)
     if not resolved_user_id:
         raise ValueError(f"Sleeper user payload is missing user_id: {user!r}")
@@ -436,6 +455,7 @@ def user_row(*, captured_at: datetime, user: dict[str, Any]) -> SleeperUserRow:
 
 
 def league_row(*, captured_at: datetime, league: dict[str, Any]) -> SleeperLeagueRow:
+    """Parse a Sleeper league payload into a discovery league row."""
     scoring_settings = league.get("scoring_settings") or {}
     league_settings = league.get("settings") or {}
     roster_positions = [str(position) for position in league.get("roster_positions") or []]
@@ -475,6 +495,7 @@ def league_user_row(
     league: dict[str, Any],
     user: dict[str, Any],
 ) -> SleeperLeagueUserRow:
+    """Parse one league-user membership edge."""
     return SleeperLeagueUserRow(
         captured_at=captured_at,
         league_id=str(league["league_id"]),
@@ -484,6 +505,7 @@ def league_user_row(
 
 
 def format_user_row(row: SleeperUserRow) -> dict[str, Any]:
+    """Format a discovery user row for SQLite upsert."""
     return {
         "captured_date": row.captured_at.date().isoformat(),
         "user_id": row.user_id,
@@ -492,6 +514,7 @@ def format_user_row(row: SleeperUserRow) -> dict[str, Any]:
 
 
 def format_league_row(row: SleeperLeagueRow) -> dict[str, Any]:
+    """Format a discovery league row for SQLite upsert."""
     position_counts = Counter(row.roster_positions)
     formatted: dict[str, Any] = {
         "captured_date": row.captured_at.date().isoformat(),
@@ -517,6 +540,7 @@ def format_league_row(row: SleeperLeagueRow) -> dict[str, Any]:
 
 
 def format_league_user_row(row: SleeperLeagueUserRow) -> dict[str, Any]:
+    """Format a league-user edge row for SQLite upsert."""
     return {
         "captured_date": row.captured_at.date().isoformat(),
         "league_id": row.league_id,
@@ -526,6 +550,7 @@ def format_league_user_row(row: SleeperLeagueUserRow) -> dict[str, Any]:
 
 
 def format_frontier_row(row: SleeperFrontierRow) -> dict[str, Any]:
+    """Format a frontier row for SQLite upsert."""
     return {
         "user_id": row.user_id,
         "username": row.username,
@@ -537,6 +562,7 @@ def format_frontier_row(row: SleeperFrontierRow) -> dict[str, Any]:
 
 
 def parse_frontier_row(row: dict[str, Any]) -> SleeperFrontierRow:
+    """Parse a SQLite frontier record into a frontier row."""
     expanded_at = str(row.get("expanded_at") or "").strip()
     return SleeperFrontierRow(
         user_id=str(row.get("user_id") or "").strip(),
@@ -567,6 +593,7 @@ REAL_DISCOVERY_COLUMNS = {
 
 
 def discovery_sqlite_type(column: str) -> str:
+    """Return the SQLite column type for a discovery column."""
     if column in BOOLEAN_DISCOVERY_COLUMNS or column in INTEGER_DISCOVERY_COLUMNS:
         return "INTEGER"
     if column in REAL_DISCOVERY_COLUMNS:
@@ -575,6 +602,7 @@ def discovery_sqlite_type(column: str) -> str:
 
 
 def coerce_discovery_value(column: str, value: Any) -> str | int | float | None:
+    """Coerce a discovery value into its SQLite storage type."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -598,6 +626,7 @@ def coerce_discovery_value(column: str, value: Any) -> str | int | float | None:
 
 
 def format_discovery_value(column: str, value: Any) -> str:
+    """Format a SQLite discovery value back into flat text."""
     if value is None:
         return ""
     if column in BOOLEAN_DISCOVERY_COLUMNS:
@@ -611,6 +640,7 @@ def format_discovery_value(column: str, value: Any) -> str:
 
 class SleeperDiscoveryStore:
     def __init__(self, path: str | Path) -> None:
+        """Open a SQLite discovery store and ensure its schema exists."""
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(self.path)
@@ -619,6 +649,7 @@ class SleeperDiscoveryStore:
         self.init_schema()
 
     def init_schema(self) -> None:
+        """Create discovery tables and indexes if they do not exist."""
         self.create_table("users", USER_DISCOVERY_COLUMNS, ("user_id",))
         self.create_table("leagues", LEAGUE_DISCOVERY_COLUMNS, ("league_id",))
         self.create_table(
@@ -638,6 +669,7 @@ class SleeperDiscoveryStore:
         columns: list[str],
         key_columns: tuple[str, ...],
     ) -> None:
+        """Create a typed WITHOUT ROWID table for discovery data."""
         column_sql = ", ".join(f"{column} {discovery_sqlite_type(column)}" for column in columns)
         key_sql = ", ".join(key_columns)
         self._connection.execute(
@@ -646,12 +678,14 @@ class SleeperDiscoveryStore:
         )
 
     def read_frontier(self) -> list[SleeperFrontierRow]:
+        """Read all frontier rows from SQLite."""
         cursor = self._connection.execute(
             f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} FROM frontier"
         )
         return self.parse_frontier_rows(cursor.fetchall())
 
     def read_unexpanded_frontier(self, limit: int | None) -> list[SleeperFrontierRow]:
+        """Read the next unexpanded frontier rows in crawl order."""
         limit_sql = "" if limit is None else " LIMIT ?"
         parameters: tuple[int, ...] = () if limit is None else (limit,)
         cursor = self._connection.execute(
@@ -664,6 +698,7 @@ class SleeperDiscoveryStore:
         return self.parse_frontier_rows(cursor.fetchall())
 
     def parse_frontier_rows(self, rows: list[tuple[Any, ...]]) -> list[SleeperFrontierRow]:
+        """Parse SQLite frontier tuples into frontier rows."""
         return [
             parse_frontier_row(
                 {
@@ -675,6 +710,7 @@ class SleeperDiscoveryStore:
         ]
 
     def read_league_ids(self) -> set[str]:
+        """Read all known league IDs."""
         return {
             row[0]
             for row in self._connection.execute("SELECT league_id FROM leagues")
@@ -682,6 +718,7 @@ class SleeperDiscoveryStore:
         }
 
     def read_league_user_ids(self) -> set[str]:
+        """Read league IDs whose users have already been fetched."""
         return {
             row[0]
             for row in self._connection.execute("SELECT DISTINCT league_id FROM league_users")
@@ -689,6 +726,7 @@ class SleeperDiscoveryStore:
         }
 
     def read_frontier_ids(self) -> set[str]:
+        """Read all known frontier user IDs."""
         return {
             row[0]
             for row in self._connection.execute("SELECT user_id FROM frontier")
@@ -696,6 +734,7 @@ class SleeperDiscoveryStore:
         }
 
     def count_unexpanded_frontier(self) -> int:
+        """Count frontier users that have not been expanded."""
         return int(
             self._connection.execute(
                 "SELECT COUNT(*) FROM frontier WHERE expanded_at IS NULL"
@@ -703,9 +742,11 @@ class SleeperDiscoveryStore:
         )
 
     def count_leagues(self) -> int:
+        """Count known leagues."""
         return self.count_table("leagues")
 
     def table_counts(self) -> dict[str, int]:
+        """Return row counts for all discovery tables."""
         return {
             "users": self.count_table("users"),
             "leagues": self.count_table("leagues"),
@@ -721,6 +762,7 @@ class SleeperDiscoveryStore:
         league_users: list[SleeperLeagueUserRow],
         frontier: list[SleeperFrontierRow],
     ) -> None:
+        """Upsert a batch of discovery rows into SQLite."""
         with self._connection:
             self.upsert_rows(
                 table="users",
@@ -764,6 +806,7 @@ class SleeperDiscoveryStore:
         key_columns: tuple[str, ...],
         update_sql: str | None = None,
     ) -> None:
+        """Upsert generic dictionaries into one SQLite table."""
         if not rows:
             return
         placeholders = ", ".join("?" for _ in columns)
@@ -785,8 +828,10 @@ class SleeperDiscoveryStore:
         )
 
     def count_table(self, table: str) -> int:
+        """Count rows in a SQLite table."""
         return int(self._connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
     def close(self) -> None:
+        """Checkpoint pending WAL data and close the store."""
         self._connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         self._connection.close()

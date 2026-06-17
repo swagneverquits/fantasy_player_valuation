@@ -5,6 +5,7 @@ from math import sqrt
 
 
 def mean_absolute_error(actual: Mapping[str, float], predicted: Mapping[str, float]) -> float:
+    """Calculate mean absolute error over shared player IDs."""
     shared = actual.keys() & predicted.keys()
     if not shared:
         raise ValueError("actual and predicted have no shared player IDs")
@@ -12,6 +13,7 @@ def mean_absolute_error(actual: Mapping[str, float], predicted: Mapping[str, flo
 
 
 def root_mean_squared_error(actual: Mapping[str, float], predicted: Mapping[str, float]) -> float:
+    """Calculate root mean squared error over shared player IDs."""
     shared = actual.keys() & predicted.keys()
     if not shared:
         raise ValueError("actual and predicted have no shared player IDs")
@@ -24,6 +26,7 @@ def pairwise_preference_accuracy(
     actual: Mapping[str, float],
     predicted: Mapping[str, float],
 ) -> float:
+    """Calculate pairwise ordering accuracy over shared player IDs."""
     shared = sorted(actual.keys() & predicted.keys())
     if len(shared) < 2:
         raise ValueError("at least two shared player IDs are required")
@@ -43,4 +46,3 @@ def pairwise_preference_accuracy(
     if comparable == 0:
         raise ValueError("no non-tied player pairs are comparable")
     return correct / comparable
-

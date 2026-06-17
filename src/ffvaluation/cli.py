@@ -332,6 +332,7 @@ def discovery_progress_printer(
     initial_leagues_history_count: int | None = None,
     timing_collector: DiscoveryTiming | None = None,
 ):
+    """Build a Sleeper discovery progress callback."""
     if every <= 0:
         return None
 
@@ -342,6 +343,7 @@ def discovery_progress_printer(
         league_users: int,
         queued_users: int,
     ) -> None:
+        """Print periodic Sleeper discovery progress."""
         if users == 1 or users % every == 0:
             estimated_rows = None
             if initial_leagues_history_count is not None:
@@ -387,6 +389,7 @@ def discovery_timing_table(
     estimated_rows: int | None,
     timing_collector: DiscoveryTiming,
 ) -> Table:
+    """Build a Rich table for Sleeper discovery timing metrics."""
     snapshot = timing_collector.snapshot()
     elapsed_minutes = max(snapshot.elapsed_seconds / 60, 1e-9)
     total_tracked_seconds = (
@@ -432,18 +435,21 @@ def discovery_timing_table(
 
 
 def safe_div(numerator: float, denominator: float) -> float:
+    """Divide two numbers while returning zero for a zero denominator."""
     if denominator == 0:
         return 0.0
     return numerator / denominator
 
 
 def format_seconds(seconds: float) -> str:
+    """Format seconds as milliseconds or seconds for CLI output."""
     if seconds < 1:
         return f"{seconds * 1000:.0f} ms"
     return f"{seconds:.1f} s"
 
 
 def load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
+    """Load one key from a simple dotenv file."""
     if not env_path.exists():
         return None
 
@@ -455,10 +461,12 @@ def load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
 
 
 def progress_printer(every: int):
+    """Build a generic periodic progress callback."""
     if every <= 0:
         return None
 
     def print_progress(current: int, total: int, status: str) -> None:
+        """Print periodic current-total progress."""
         if current == 1 or current % every == 0 or current == total:
             console.print(f"RosterAudit history: {current}/{total} {status}")
 

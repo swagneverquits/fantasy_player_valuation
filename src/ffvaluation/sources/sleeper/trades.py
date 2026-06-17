@@ -35,6 +35,7 @@ def fetch_trade_history(
     sleep_seconds: float = 0.1,
     fetch_json: FetchJson | None = None,
 ) -> list[SleeperTradeRow]:
+    """Fetch completed Sleeper trades across a league chain."""
     captured_at = captured_at or datetime.now(UTC)
     since = captured_at - timedelta(days=days)
     fetch_json = fetch_json or default_fetch_json
@@ -75,6 +76,7 @@ def fetch_trade_history(
 
 
 def write_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Path:
+    """Write Sleeper trade rows to a CSV file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -87,6 +89,7 @@ def write_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Pa
 
 
 def upsert_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Path:
+    """Upsert Sleeper trade rows into the trade-history CSV."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     merged_rows: dict[str, dict[str, str]] = {}
@@ -130,6 +133,7 @@ def iter_league_chain(
     max_leagues: int | None,
     fetch_json: FetchJson,
 ) -> Iterable[dict[str, Any]]:
+    """Yield a league and optionally its previous-season ancestors."""
     current_league_id: str | None = league_id
     seen: set[str] = set()
     league_count = 0
@@ -157,6 +161,7 @@ def trade_row(
     round_number: int,
     transaction: dict[str, Any],
 ) -> SleeperTradeRow:
+    """Parse a completed Sleeper trade transaction into a row."""
     scoring_settings = league.get("scoring_settings") or {}
     league_settings = league.get("settings") or {}
     roster_positions = [str(position) for position in league.get("roster_positions") or []]
@@ -204,6 +209,7 @@ def trade_row(
 
 
 def format_trade_row(row: SleeperTradeRow) -> dict[str, str]:
+    """Format a Sleeper trade row for CSV output."""
     return {
         "captured_at": row.captured_at.isoformat(),
         "league_id": row.league_id,

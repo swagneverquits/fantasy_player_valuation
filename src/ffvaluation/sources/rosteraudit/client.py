@@ -52,6 +52,7 @@ def fetch_rankings_snapshot(
     max_pages: int | None = None,
     fetch_json: FetchJson | None = None,
 ) -> list[ManualSnapshotRow]:
+    """Fetch the current RosterAudit rankings snapshot."""
     captured_at = captured_at or datetime.now(UTC)
     season = season or captured_at.year
     fetch_json = fetch_json or fetch_json_payload
@@ -105,6 +106,7 @@ def fetch_value_history_snapshot(
     progress_callback: ProgressCallback | None = None,
     fetch_json: FetchJson | None = None,
 ) -> list[ValueHistoryRow]:
+    """Fetch RosterAudit value history rows for ranked players."""
     captured_at = captured_at or datetime.now(UTC)
     rankings_fetch_json = fetch_json or fetch_json_payload
 
@@ -150,6 +152,7 @@ def pull_value_history_csv_incremental(
     progress_callback: ProgressCallback | None = None,
     fetch_json: FetchJson | None = None,
 ) -> ValueHistoryPullResult:
+    """Incrementally pull and persist RosterAudit value history rows."""
     captured_at = captured_at or datetime.now(UTC)
     latest_as_of_date = latest_as_of_date or captured_at.date().isoformat()
     path = Path(path)
@@ -211,6 +214,7 @@ def pull_value_history_csv_incremental(
 
 
 def read_value_history_dates_by_player(path: str | Path) -> dict[str, set[str]]:
+    """Read saved value-history dates keyed by player ID."""
     import csv
 
     path = Path(path)
@@ -229,6 +233,7 @@ def read_value_history_dates_by_player(path: str | Path) -> dict[str, set[str]]:
 
 
 def write_value_history_csv(rows: list[ValueHistoryRow], path: str | Path) -> Path:
+    """Upsert RosterAudit value-history rows into a CSV file."""
     import csv
 
     path = Path(path)
@@ -287,6 +292,7 @@ def fetch_value_history_player_rows(
     captured_at: datetime,
     fetch_json: FetchJson | None,
 ) -> tuple[str, list[ValueHistoryRow]]:
+    """Fetch value-history rows for one RosterAudit player."""
     player_id = optional_str(player.get("sleeper_id"))
     if not player_id or str(player.get("position")).upper() == "PICK":
         return "skipped", []
@@ -327,6 +333,7 @@ def iter_rankings_players(
     max_pages: int | None,
     fetch_json: FetchJson,
 ) -> list[dict[str, Any]]:
+    """Fetch all paginated RosterAudit ranking players."""
     page = 1
     players: list[dict[str, Any]] = []
 
@@ -343,6 +350,7 @@ def iter_rankings_players(
 
 
 def rankings_url(*, page: int, per_page: int, league_size: int) -> str:
+    """Build a RosterAudit rankings API URL."""
     query = urlencode(
         {
             "format": "sf",
@@ -357,10 +365,12 @@ def rankings_url(*, page: int, per_page: int, league_size: int) -> str:
 
 
 def player_page_url(player_id: str) -> str:
+    """Build a RosterAudit player page API URL."""
     return f"{BASE_URL}/player-page/{player_id}"
 
 
 def fetch_json_payload(url: str, *, api_key: str | None = None) -> dict[str, Any]:
+    """Fetch JSON from RosterAudit with simple 429 backoff."""
     headers = {
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0",
@@ -385,6 +395,7 @@ def fetch_json_payload(url: str, *, api_key: str | None = None) -> dict[str, Any
 
 
 def superflex_value(player: dict[str, Any]) -> float:
+    """Extract a numeric Superflex market value from a player payload."""
     value = player.get("val_sf_market", player.get("value"))
     if value in (None, ""):
         return 0.0
@@ -392,6 +403,7 @@ def superflex_value(player: dict[str, Any]) -> float:
 
 
 def asset_id(player: dict[str, Any]) -> str:
+    """Choose a stable asset ID for a RosterAudit player payload."""
     sleeper_id = optional_str(player.get("sleeper_id"))
     if sleeper_id:
         return sleeper_id
@@ -403,12 +415,14 @@ def asset_id(player: dict[str, Any]) -> str:
 
 
 def optional_float(value: Any) -> float | None:
+    """Parse an optional float-like value."""
     if value in (None, ""):
         return None
     return float(value)
 
 
 def optional_str(value: Any) -> str | None:
+    """Parse an optional string-like value."""
     if value in (None, ""):
         return None
     return str(value)

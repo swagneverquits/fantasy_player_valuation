@@ -43,6 +43,7 @@ class ManualSnapshotRow(BaseModel):
 
 
 def load_manual_snapshot(path: str | Path) -> list[ManualSnapshotRow]:
+    """Load and validate a manual valuation snapshot CSV."""
     path = Path(path)
     with path.open(newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
@@ -51,6 +52,7 @@ def load_manual_snapshot(path: str | Path) -> list[ManualSnapshotRow]:
 
 
 def write_snapshot_csv(rows: list[ManualSnapshotRow], path: str | Path) -> Path:
+    """Write manual snapshot rows to a dated CSV file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -69,6 +71,7 @@ def upsert_snapshot_history_csv(
     *,
     as_of_date: str,
 ) -> Path:
+    """Upsert snapshot rows into the long-running history CSV."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     merged_rows: dict[tuple[str, str, str], dict[str, str]] = {}
@@ -111,12 +114,14 @@ def upsert_snapshot_history_csv(
 
 
 def validate_snapshot_columns(columns: list[str]) -> None:
+    """Raise if a snapshot CSV is missing required columns."""
     missing = [column for column in SNAPSHOT_COLUMNS if column not in columns]
     if missing:
         raise ValueError(f"Missing required snapshot columns: {', '.join(missing)}")
 
 
 def parse_row(row: dict[str, str], *, row_number: int) -> ManualSnapshotRow:
+    """Parse one CSV row into a manual snapshot row."""
     source = row["source"].strip()
     valid_sources = {source_definition.name for source_definition in list_sources()}
     if source not in valid_sources:
@@ -146,21 +151,25 @@ def parse_row(row: dict[str, str], *, row_number: int) -> ManualSnapshotRow:
 
 
 def optional_int(value: str) -> int | None:
+    """Parse an optional integer string."""
     stripped = value.strip()
     return int(stripped) if stripped else None
 
 
 def optional_float(value: str) -> float | None:
+    """Parse an optional float string."""
     stripped = value.strip()
     return float(stripped) if stripped else None
 
 
 def optional_sort_int(value: str) -> int:
+    """Parse an integer sort key with blanks sorted last."""
     stripped = value.strip()
     return int(stripped) if stripped else 1_000_000
 
 
 def format_row(row: ManualSnapshotRow) -> dict[str, str]:
+    """Format one manual snapshot row for CSV output."""
     valuation = row.valuation
     return {
         "source": valuation.source,

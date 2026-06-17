@@ -38,4 +38,5 @@ DEFAULT_SOURCES: list[SourceDefinition] = [
 
 
 def list_sources() -> list[SourceDefinition]:
+    """Return the configured candidate valuation sources."""
     return DEFAULT_SOURCES.copy()
