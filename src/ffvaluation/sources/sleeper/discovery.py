@@ -659,8 +659,8 @@ class SleeperDiscoveryStore:
         )
         self.create_table("frontier", USER_FRONTIER_COLUMNS, ("user_id",))
         self._connection.execute(
-            "CREATE INDEX IF NOT EXISTS idx_frontier_expanded_at_discovered_at_user_id "
-            "ON frontier (expanded_at, discovered_at, user_id)"
+            "CREATE INDEX IF NOT EXISTS idx_frontier_expanded_at_discovered_at_desc_user_id "
+            "ON frontier (expanded_at, discovered_at DESC, user_id)"
         )
 
     def create_table(
@@ -685,14 +685,14 @@ class SleeperDiscoveryStore:
         return self.parse_frontier_rows(cursor.fetchall())
 
     def read_unexpanded_frontier(self, limit: int | None) -> list[SleeperFrontierRow]:
-        """Read the next unexpanded frontier rows in crawl order."""
+        """Read the newest unexpanded frontier rows first."""
         limit_sql = "" if limit is None else " LIMIT ?"
         parameters: tuple[int, ...] = () if limit is None else (limit,)
         cursor = self._connection.execute(
             f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} "
             "FROM frontier "
             "WHERE expanded_at IS NULL "
-            f"ORDER BY discovered_at, user_id{limit_sql}",
+            f"ORDER BY discovered_at DESC, user_id{limit_sql}",
             parameters,
         )
         return self.parse_frontier_rows(cursor.fetchall())
