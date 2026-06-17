@@ -47,7 +47,7 @@ def load_manual_snapshot(path: str | Path) -> list[ManualSnapshotRow]:
     with path.open(newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
         validate_snapshot_columns(reader.fieldnames or [])
-        return [_parse_row(row, row_number=index + 2) for index, row in enumerate(reader)]
+        return [parse_row(row, row_number=index + 2) for index, row in enumerate(reader)]
 
 
 def write_snapshot_csv(rows: list[ManualSnapshotRow], path: str | Path) -> Path:
@@ -58,7 +58,7 @@ def write_snapshot_csv(rows: list[ManualSnapshotRow], path: str | Path) -> Path:
         writer = csv.DictWriter(file, fieldnames=SNAPSHOT_COLUMNS)
         writer.writeheader()
         for row in rows:
-            writer.writerow(_format_row(row))
+            writer.writerow(format_row(row))
 
     return path
 
@@ -83,7 +83,7 @@ def upsert_snapshot_history_csv(
                 }
 
     for row in rows:
-        formatted = _format_row(row)
+        formatted = format_row(row)
         formatted["as_of_date"] = as_of_date
         key = (formatted["source"], formatted["as_of_date"], formatted["player_id"])
         merged_rows[key] = {
@@ -100,7 +100,7 @@ def upsert_snapshot_history_csv(
                 key=lambda item: (
                     item[1]["source"],
                     item[1]["as_of_date"],
-                    _optional_sort_int(item[1]["rank"]),
+                    optional_sort_int(item[1]["rank"]),
                     item[1]["player_name"],
                     item[1]["player_id"],
                 ),
@@ -116,7 +116,7 @@ def validate_snapshot_columns(columns: list[str]) -> None:
         raise ValueError(f"Missing required snapshot columns: {', '.join(missing)}")
 
 
-def _parse_row(row: dict[str, str], *, row_number: int) -> ManualSnapshotRow:
+def parse_row(row: dict[str, str], *, row_number: int) -> ManualSnapshotRow:
     source = row["source"].strip()
     valid_sources = {source_definition.name for source_definition in list_sources()}
     if source not in valid_sources:
@@ -136,31 +136,31 @@ def _parse_row(row: dict[str, str], *, row_number: int) -> ManualSnapshotRow:
         source=source,
         captured_at=datetime.fromisoformat(row["captured_at"].strip()),
         season=int(row["season"]),
-        week=_optional_int(row["week"]),
+        week=optional_int(row["week"]),
         format=DEFAULT_FORMAT,
         player_id=player_id,
-        rank=_optional_int(row["rank"]),
-        raw_value=_optional_float(row["raw_value"]),
+        rank=optional_int(row["rank"]),
+        raw_value=optional_float(row["raw_value"]),
     )
     return ManualSnapshotRow(player=player, valuation=valuation)
 
 
-def _optional_int(value: str) -> int | None:
+def optional_int(value: str) -> int | None:
     stripped = value.strip()
     return int(stripped) if stripped else None
 
 
-def _optional_float(value: str) -> float | None:
+def optional_float(value: str) -> float | None:
     stripped = value.strip()
     return float(stripped) if stripped else None
 
 
-def _optional_sort_int(value: str) -> int:
+def optional_sort_int(value: str) -> int:
     stripped = value.strip()
     return int(stripped) if stripped else 1_000_000
 
 
-def _format_row(row: ManualSnapshotRow) -> dict[str, str]:
+def format_row(row: ManualSnapshotRow) -> dict[str, str]:
     valuation = row.valuation
     return {
         "source": valuation.source,

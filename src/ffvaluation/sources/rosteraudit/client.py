@@ -54,29 +54,29 @@ def fetch_rankings_snapshot(
 ) -> list[ManualSnapshotRow]:
     captured_at = captured_at or datetime.now(UTC)
     season = season or captured_at.year
-    fetch_json = fetch_json or _fetch_json
+    fetch_json = fetch_json or fetch_json_payload
 
     players = list(
-        _iter_rankings_players(
+        iter_rankings_players(
             league_size=league_size,
             per_page=per_page,
             max_pages=max_pages,
             fetch_json=fetch_json,
         )
     )
-    players.sort(key=lambda player: _superflex_value(player), reverse=True)
+    players.sort(key=lambda player: superflex_value(player), reverse=True)
 
     rows: list[ManualSnapshotRow] = []
     for rank, player_data in enumerate(players, start=1):
-        player_id = _asset_id(player_data)
+        player_id = asset_id(player_data)
         rows.append(
             ManualSnapshotRow(
                 player=Player(
                     player_id=player_id,
                     name=str(player_data["name"]),
                     position=str(player_data["position"]).upper(),
-                    team=_optional_str(player_data.get("team")),
-                    age=_optional_float(player_data.get("age")),
+                    team=optional_str(player_data.get("team")),
+                    age=optional_float(player_data.get("age")),
                 ),
                 valuation=ValuationSnapshot(
                     source=SOURCE_NAME,
@@ -86,7 +86,7 @@ def fetch_rankings_snapshot(
                     format=DEFAULT_FORMAT,
                     player_id=player_id,
                     rank=rank,
-                    raw_value=_superflex_value(player_data),
+                    raw_value=superflex_value(player_data),
                 ),
             )
         )
@@ -106,9 +106,9 @@ def fetch_value_history_snapshot(
     fetch_json: FetchJson | None = None,
 ) -> list[ValueHistoryRow]:
     captured_at = captured_at or datetime.now(UTC)
-    rankings_fetch_json = fetch_json or _fetch_json
+    rankings_fetch_json = fetch_json or fetch_json_payload
 
-    players = _iter_rankings_players(
+    players = iter_rankings_players(
         league_size=league_size,
         per_page=per_page,
         max_pages=max_pages,
@@ -123,7 +123,7 @@ def fetch_value_history_snapshot(
         if index > 0 and sleep_seconds > 0:
             time.sleep(sleep_seconds)
 
-        status, player_rows = _fetch_value_history_player_rows(
+        status, player_rows = fetch_value_history_player_rows(
             player,
             api_key=api_key,
             captured_at=captured_at,
@@ -153,10 +153,10 @@ def pull_value_history_csv_incremental(
     captured_at = captured_at or datetime.now(UTC)
     latest_as_of_date = latest_as_of_date or captured_at.date().isoformat()
     path = Path(path)
-    rankings_fetch_json = fetch_json or _fetch_json
+    rankings_fetch_json = fetch_json or fetch_json_payload
     existing_dates_by_player = read_value_history_dates_by_player(path)
 
-    players = _iter_rankings_players(
+    players = iter_rankings_players(
         league_size=league_size,
         per_page=per_page,
         max_pages=max_pages,
@@ -170,7 +170,7 @@ def pull_value_history_csv_incremental(
     players_skipped = 0
     total_players = len(players)
     for index, player in enumerate(players):
-        player_id = _optional_str(player.get("sleeper_id"))
+        player_id = optional_str(player.get("sleeper_id"))
         if (
             player_id
             and latest_as_of_date
@@ -184,7 +184,7 @@ def pull_value_history_csv_incremental(
         if index > 0 and sleep_seconds > 0:
             time.sleep(sleep_seconds)
 
-        status, player_rows = _fetch_value_history_player_rows(
+        status, player_rows = fetch_value_history_player_rows(
             player,
             api_key=api_key,
             captured_at=captured_at,
@@ -280,22 +280,22 @@ def write_value_history_csv(rows: list[ValueHistoryRow], path: str | Path) -> Pa
     return path
 
 
-def _fetch_value_history_player_rows(
+def fetch_value_history_player_rows(
     player: dict[str, Any],
     *,
     api_key: str,
     captured_at: datetime,
     fetch_json: FetchJson | None,
 ) -> tuple[str, list[ValueHistoryRow]]:
-    player_id = _optional_str(player.get("sleeper_id"))
+    player_id = optional_str(player.get("sleeper_id"))
     if not player_id or str(player.get("position")).upper() == "PICK":
         return "skipped", []
 
     try:
         payload = (
-            fetch_json(_player_page_url(player_id))
+            fetch_json(player_page_url(player_id))
             if fetch_json is not None
-            else _fetch_json(_player_page_url(player_id), api_key=api_key)
+            else fetch_json_payload(player_page_url(player_id), api_key=api_key)
         )
     except HTTPError as error:
         if error.code == 404:
@@ -311,16 +311,16 @@ def _fetch_value_history_player_rows(
             player_id=str(player_data["sleeper_id"]),
             player_name=str(player_data["name"]),
             position=str(player_data["position"]).upper(),
-            team=_optional_str(player_data.get("team")),
-            sf_value=_optional_float(history_row.get("sf")),
-            one_qb_value=_optional_float(history_row.get("one_qb")),
+            team=optional_str(player_data.get("team")),
+            sf_value=optional_float(history_row.get("sf")),
+            one_qb_value=optional_float(history_row.get("one_qb")),
         )
         for history_row in payload.get("value_history", [])
     ]
     return "fetched", rows
 
 
-def _iter_rankings_players(
+def iter_rankings_players(
     *,
     league_size: int,
     per_page: int,
@@ -332,7 +332,7 @@ def _iter_rankings_players(
 
     while True:
         payload = fetch_json(
-            _rankings_url(page=page, per_page=per_page, league_size=league_size)
+            rankings_url(page=page, per_page=per_page, league_size=league_size)
         )
         players.extend(payload.get("players", []))
 
@@ -342,7 +342,7 @@ def _iter_rankings_players(
         page += 1
 
 
-def _rankings_url(*, page: int, per_page: int, league_size: int) -> str:
+def rankings_url(*, page: int, per_page: int, league_size: int) -> str:
     query = urlencode(
         {
             "format": "sf",
@@ -356,11 +356,11 @@ def _rankings_url(*, page: int, per_page: int, league_size: int) -> str:
     return f"{BASE_URL}/rankings?{query}"
 
 
-def _player_page_url(player_id: str) -> str:
+def player_page_url(player_id: str) -> str:
     return f"{BASE_URL}/player-page/{player_id}"
 
 
-def _fetch_json(url: str, *, api_key: str | None = None) -> dict[str, Any]:
+def fetch_json_payload(url: str, *, api_key: str | None = None) -> dict[str, Any]:
     headers = {
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0",
@@ -384,15 +384,15 @@ def _fetch_json(url: str, *, api_key: str | None = None) -> dict[str, Any]:
     raise RuntimeError("unreachable RosterAudit retry state")
 
 
-def _superflex_value(player: dict[str, Any]) -> float:
+def superflex_value(player: dict[str, Any]) -> float:
     value = player.get("val_sf_market", player.get("value"))
     if value in (None, ""):
         return 0.0
     return float(value)
 
 
-def _asset_id(player: dict[str, Any]) -> str:
-    sleeper_id = _optional_str(player.get("sleeper_id"))
+def asset_id(player: dict[str, Any]) -> str:
+    sleeper_id = optional_str(player.get("sleeper_id"))
     if sleeper_id:
         return sleeper_id
 
@@ -402,13 +402,13 @@ def _asset_id(player: dict[str, Any]) -> str:
     return f"rosteraudit-{slug}"
 
 
-def _optional_float(value: Any) -> float | None:
+def optional_float(value: Any) -> float | None:
     if value in (None, ""):
         return None
     return float(value)
 
 
-def _optional_str(value: Any) -> str | None:
+def optional_str(value: Any) -> str | None:
     if value in (None, ""):
         return None
     return str(value)

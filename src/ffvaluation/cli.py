@@ -123,7 +123,7 @@ def pull_rosteraudit_history(
 
     captured_at = datetime.now(UTC)
     output = output or Path(f"data/raw/rosteraudit/value_history/{captured_at:%Y%m%d}.csv")
-    api_key = api_key or _load_env_value("ROSTERAUDIT_API_KEY")
+    api_key = api_key or load_env_value("ROSTERAUDIT_API_KEY")
     if not api_key:
         raise typer.BadParameter("Set ROSTERAUDIT_API_KEY in .env or pass --api-key.")
 
@@ -134,7 +134,7 @@ def pull_rosteraudit_history(
         limit=limit,
         latest_as_of_date=latest_date,
         sleep_seconds=sleep_seconds,
-        progress_callback=_progress_printer(progress_every),
+        progress_callback=progress_printer(progress_every),
     )
     console.print(
         "Upserted "
@@ -309,7 +309,7 @@ def expand_sleeper_network(
         flush_every=flush_every,
         workers=workers,
         requests_per_minute=requests_per_minute,
-        progress_callback=_discovery_progress_printer(
+        progress_callback=discovery_progress_printer(
             progress_every,
             initial_leagues_history_count=initial_league_count,
             timing_collector=timing_collector,
@@ -327,7 +327,7 @@ def expand_sleeper_network(
     console.print(f"Wrote SQLite discovery state to {db_path}")
 
 
-def _discovery_progress_printer(
+def discovery_progress_printer(
     every: int,
     initial_leagues_history_count: int | None = None,
     timing_collector: DiscoveryTiming | None = None,
@@ -363,7 +363,7 @@ def _discovery_progress_printer(
 
             console.print()
             console.print(
-                _discovery_timing_table(
+                discovery_timing_table(
                     users=users,
                     leagues_seen=leagues_seen,
                     new_leagues=new_leagues,
@@ -377,7 +377,7 @@ def _discovery_progress_printer(
     return print_progress
 
 
-def _discovery_timing_table(
+def discovery_timing_table(
     *,
     users: int,
     leagues_seen: int,
@@ -405,19 +405,22 @@ def _discovery_timing_table(
         table.add_row("Leagues history est.", f"~{estimated_rows}")
     table.add_row("Requests", str(snapshot.request_count))
     table.add_row("Requests/min", f"{snapshot.request_count / elapsed_minutes:.1f}")
-    table.add_row("Avg request", _format_seconds(_safe_div(snapshot.request_seconds, snapshot.request_count)))
-    table.add_row("HTTP time", _format_seconds(snapshot.request_seconds))
-    table.add_row("Throttle wait", _format_seconds(snapshot.throttle_wait_seconds))
-    table.add_row("Flush time", _format_seconds(snapshot.flush_seconds))
+    table.add_row(
+        "Avg request",
+        format_seconds(safe_div(snapshot.request_seconds, snapshot.request_count)),
+    )
+    table.add_row("HTTP time", format_seconds(snapshot.request_seconds))
+    table.add_row("Throttle wait", format_seconds(snapshot.throttle_wait_seconds))
+    table.add_row("Flush time", format_seconds(snapshot.flush_seconds))
     table.add_row("Flushes", str(snapshot.flush_count))
     table.add_row("Retries", str(snapshot.retry_count))
-    table.add_row("Retry wait", _format_seconds(snapshot.retry_wait_seconds))
+    table.add_row("Retry wait", format_seconds(snapshot.retry_wait_seconds))
     if snapshot.retry_reasons:
         retry_reasons = ", ".join(
             f"{reason}={count}" for reason, count in sorted(snapshot.retry_reasons.items())
         )
         table.add_row("Retry reasons", retry_reasons)
-    table.add_row("New leagues/user", f"{_safe_div(new_leagues, users):.2f}")
+    table.add_row("New leagues/user", f"{safe_div(new_leagues, users):.2f}")
     if total_tracked_seconds > 0:
         table.add_row("HTTP share", f"{snapshot.request_seconds / total_tracked_seconds:.1%}")
         table.add_row(
@@ -428,19 +431,19 @@ def _discovery_timing_table(
     return table
 
 
-def _safe_div(numerator: float, denominator: float) -> float:
+def safe_div(numerator: float, denominator: float) -> float:
     if denominator == 0:
         return 0.0
     return numerator / denominator
 
 
-def _format_seconds(seconds: float) -> str:
+def format_seconds(seconds: float) -> str:
     if seconds < 1:
         return f"{seconds * 1000:.0f} ms"
     return f"{seconds:.1f} s"
 
 
-def _load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
+def load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
     if not env_path.exists():
         return None
 
@@ -451,7 +454,7 @@ def _load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
     return None
 
 
-def _progress_printer(every: int):
+def progress_printer(every: int):
     if every <= 0:
         return None
 

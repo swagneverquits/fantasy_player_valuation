@@ -19,6 +19,7 @@ from ffvaluation.sources.sleeper.common import (
     league_users_url,
     optional_bool,
     optional_float,
+    optional_int,
     optional_str,
     te_premium,
     user_id,
@@ -441,7 +442,7 @@ def league_row(*, captured_at: datetime, league: dict[str, Any]) -> SleeperLeagu
     ppr = optional_float(scoring_settings.get("rec"))
     premium = te_premium(scoring_settings, ppr)
     is_superflex = "SUPER_FLEX" in roster_positions
-    total_rosters = _optional_int(league.get("total_rosters"))
+    total_rosters = optional_int(league.get("total_rosters"))
     dynasty = is_dynasty(league)
 
     return SleeperLeagueRow(
@@ -547,12 +548,6 @@ def parse_frontier_row(row: dict[str, Any]) -> SleeperFrontierRow:
     )
 
 
-def _optional_int(value: Any) -> int | None:
-    if value in (None, ""):
-        return None
-    return int(value)
-
-
 BOOLEAN_DISCOVERY_COLUMNS = {
     "is_dynasty",
     "is_superflex",
@@ -621,23 +616,23 @@ class SleeperDiscoveryStore:
         self._connection = sqlite3.connect(self.path)
         self._connection.execute("PRAGMA journal_mode=WAL")
         self._connection.execute("PRAGMA synchronous=NORMAL")
-        self._init_schema()
+        self.init_schema()
 
-    def _init_schema(self) -> None:
-        self._create_table("users", USER_DISCOVERY_COLUMNS, ("user_id",))
-        self._create_table("leagues", LEAGUE_DISCOVERY_COLUMNS, ("league_id",))
-        self._create_table(
+    def init_schema(self) -> None:
+        self.create_table("users", USER_DISCOVERY_COLUMNS, ("user_id",))
+        self.create_table("leagues", LEAGUE_DISCOVERY_COLUMNS, ("league_id",))
+        self.create_table(
             "league_users",
             LEAGUE_USER_DISCOVERY_COLUMNS,
             ("league_id", "user_id"),
         )
-        self._create_table("frontier", USER_FRONTIER_COLUMNS, ("user_id",))
+        self.create_table("frontier", USER_FRONTIER_COLUMNS, ("user_id",))
         self._connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_frontier_expanded_at_discovered_at_user_id "
             "ON frontier (expanded_at, discovered_at, user_id)"
         )
 
-    def _create_table(
+    def create_table(
         self,
         table: str,
         columns: list[str],
@@ -654,7 +649,7 @@ class SleeperDiscoveryStore:
         cursor = self._connection.execute(
             f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} FROM frontier"
         )
-        return self._parse_frontier_rows(cursor.fetchall())
+        return self.parse_frontier_rows(cursor.fetchall())
 
     def read_unexpanded_frontier(self, limit: int | None) -> list[SleeperFrontierRow]:
         limit_sql = "" if limit is None else " LIMIT ?"
@@ -666,9 +661,9 @@ class SleeperDiscoveryStore:
             f"ORDER BY discovered_at, user_id{limit_sql}",
             parameters,
         )
-        return self._parse_frontier_rows(cursor.fetchall())
+        return self.parse_frontier_rows(cursor.fetchall())
 
-    def _parse_frontier_rows(self, rows: list[tuple[Any, ...]]) -> list[SleeperFrontierRow]:
+    def parse_frontier_rows(self, rows: list[tuple[Any, ...]]) -> list[SleeperFrontierRow]:
         return [
             parse_frontier_row(
                 {
@@ -708,14 +703,14 @@ class SleeperDiscoveryStore:
         )
 
     def count_leagues(self) -> int:
-        return self._count_table("leagues")
+        return self.count_table("leagues")
 
     def table_counts(self) -> dict[str, int]:
         return {
-            "users": self._count_table("users"),
-            "leagues": self._count_table("leagues"),
-            "league_users": self._count_table("league_users"),
-            "frontier": self._count_table("frontier"),
+            "users": self.count_table("users"),
+            "leagues": self.count_table("leagues"),
+            "league_users": self.count_table("league_users"),
+            "frontier": self.count_table("frontier"),
         }
 
     def upsert_discovery(
@@ -727,25 +722,25 @@ class SleeperDiscoveryStore:
         frontier: list[SleeperFrontierRow],
     ) -> None:
         with self._connection:
-            self._upsert_rows(
+            self.upsert_rows(
                 table="users",
                 rows=[format_user_row(row) for row in users],
                 columns=USER_DISCOVERY_COLUMNS,
                 key_columns=("user_id",),
             )
-            self._upsert_rows(
+            self.upsert_rows(
                 table="leagues",
                 rows=[format_league_row(row) for row in leagues],
                 columns=LEAGUE_DISCOVERY_COLUMNS,
                 key_columns=("league_id",),
             )
-            self._upsert_rows(
+            self.upsert_rows(
                 table="league_users",
                 rows=[format_league_user_row(row) for row in league_users],
                 columns=LEAGUE_USER_DISCOVERY_COLUMNS,
                 key_columns=("league_id", "user_id"),
             )
-            self._upsert_rows(
+            self.upsert_rows(
                 table="frontier",
                 rows=[format_frontier_row(row) for row in frontier],
                 columns=USER_FRONTIER_COLUMNS,
@@ -760,7 +755,7 @@ class SleeperDiscoveryStore:
                 ),
             )
 
-    def _upsert_rows(
+    def upsert_rows(
         self,
         *,
         table: str,
@@ -789,7 +784,7 @@ class SleeperDiscoveryStore:
             ],
         )
 
-    def _count_table(self, table: str) -> int:
+    def count_table(self, table: str) -> int:
         return int(self._connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
     def close(self) -> None:

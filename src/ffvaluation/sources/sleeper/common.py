@@ -63,16 +63,16 @@ def fetch_json(
         except HTTPError as error:
             if error.code not in (429, 500, 502, 503, 504, 522) or attempt == attempts:
                 raise
-            delay = _retry_delay(attempt, backoff_seconds, error)
+            delay = retry_delay(attempt, backoff_seconds, error)
             if retry_callback is not None:
                 retry_callback(str(error.code), delay)
             time.sleep(delay)
         except (TimeoutError, socket.timeout, URLError, ConnectionResetError) as error:
-            if not _is_retryable_network_error(error) or attempt == attempts:
+            if not is_retryable_network_error(error) or attempt == attempts:
                 raise
-            delay = _retry_delay(attempt, backoff_seconds)
+            delay = retry_delay(attempt, backoff_seconds)
             if retry_callback is not None:
-                retry_callback(_retry_reason(error), delay)
+                retry_callback(retry_reason(error), delay)
             time.sleep(delay)
 
     raise RuntimeError(f"Failed to fetch {url}")
@@ -113,12 +113,12 @@ def upsert_csv(
                 key=lambda item: tuple(item[1][field] for field in sort_fields),
             )
         )
-    _replace_with_retry(temp_path, path)
+    replace_with_retry(temp_path, path)
 
     return path
 
 
-def _replace_with_retry(source: Path, target: Path, *, attempts: int = 10) -> None:
+def replace_with_retry(source: Path, target: Path, *, attempts: int = 10) -> None:
     for attempt in range(attempts):
         try:
             source.replace(target)
@@ -133,7 +133,7 @@ def _replace_with_retry(source: Path, target: Path, *, attempts: int = 10) -> No
             time.sleep(0.5 * (attempt + 1))
 
 
-def _retry_delay(
+def retry_delay(
     attempt: int,
     backoff_seconds: float,
     error: HTTPError | None = None,
@@ -147,7 +147,7 @@ def _retry_delay(
     return backoff_seconds * attempt
 
 
-def _is_retryable_network_error(error: BaseException) -> bool:
+def is_retryable_network_error(error: BaseException) -> bool:
     if isinstance(error, (TimeoutError, socket.timeout, ConnectionResetError)):
         return True
     if isinstance(error, URLError):
@@ -155,13 +155,13 @@ def _is_retryable_network_error(error: BaseException) -> bool:
     return False
 
 
-def _retry_reason(error: BaseException) -> str:
+def retry_reason(error: BaseException) -> str:
     if isinstance(error, (TimeoutError, socket.timeout)):
         return "timeout"
     if isinstance(error, ConnectionResetError):
         return "connection_reset"
     if isinstance(error, URLError):
-        return _retry_reason(error.reason)
+        return retry_reason(error.reason)
     return type(error).__name__
 
 
