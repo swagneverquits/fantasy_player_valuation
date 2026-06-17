@@ -81,6 +81,7 @@ def expand_user_frontier_sqlite(
     flush_every: int = 25,
     workers: int = 1,
     requests_per_minute: int = 500,
+    frontier_order: str = "oldest",
     progress_callback: DiscoveryProgressCallback | None = None,
     timing_collector: DiscoveryTiming | None = None,
     fetch_json: FetchJson | None = None,
@@ -92,7 +93,7 @@ def expand_user_frontier_sqlite(
         fetch_json = instrument_fetch_json(fetch_json, timing_collector)
 
     store = SleeperDiscoveryStore(db_path)
-    work_rows = store.read_unexpanded_frontier(limit=max_users)
+    work_rows = store.read_unexpanded_frontier(limit=max_users, frontier_order=frontier_order)
     frontier_by_id = {row.user_id: row for row in work_rows}
 
     users_by_id: dict[str, SleeperUserRow] = {}
@@ -659,6 +660,10 @@ class SleeperDiscoveryStore:
         )
         self.create_table("frontier", USER_FRONTIER_COLUMNS, ("user_id",))
         self._connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_frontier_expanded_at_discovered_at_user_id "
+            "ON frontier (expanded_at, discovered_at, user_id)"
+        )
+        self._connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_frontier_expanded_at_discovered_at_desc_user_id "
             "ON frontier (expanded_at, discovered_at DESC, user_id)"
         )
@@ -684,15 +689,22 @@ class SleeperDiscoveryStore:
         )
         return self.parse_frontier_rows(cursor.fetchall())
 
-    def read_unexpanded_frontier(self, limit: int | None) -> list[SleeperFrontierRow]:
-        """Read the newest unexpanded frontier rows first."""
+    def read_unexpanded_frontier(
+        self,
+        limit: int | None,
+        frontier_order: str = "oldest",
+    ) -> list[SleeperFrontierRow]:
+        """Read the next unexpanded frontier rows in the requested order."""
+        if frontier_order not in {"oldest", "newest"}:
+            raise ValueError("frontier_order must be 'oldest' or 'newest'")
         limit_sql = "" if limit is None else " LIMIT ?"
         parameters: tuple[int, ...] = () if limit is None else (limit,)
+        direction = "DESC" if frontier_order == "newest" else "ASC"
         cursor = self._connection.execute(
             f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} "
             "FROM frontier "
             "WHERE expanded_at IS NULL "
-            f"ORDER BY discovered_at DESC, user_id{limit_sql}",
+            f"ORDER BY discovered_at {direction}, user_id{limit_sql}",
             parameters,
         )
         return self.parse_frontier_rows(cursor.fetchall())

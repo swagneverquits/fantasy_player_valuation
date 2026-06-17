@@ -283,6 +283,11 @@ def expand_sleeper_network(
         "--requests-per-minute",
         help="Global Sleeper API request throttle.",
     ),
+    frontier_order: str = typer.Option(
+        "oldest",
+        "--frontier-order",
+        help="Unexpanded frontier order: oldest or newest.",
+    ),
     timing: bool = typer.Option(
         False,
         "--timing",
@@ -292,6 +297,8 @@ def expand_sleeper_network(
     """Expand the persistent Sleeper user frontier."""
 
     db_path = db_path or output_dir / "discovery.sqlite"
+    if frontier_order not in {"oldest", "newest"}:
+        raise typer.BadParameter("--frontier-order must be oldest or newest.")
     store = SleeperDiscoveryStore(db_path)
     if not store.read_frontier():
         store.close()
@@ -309,6 +316,7 @@ def expand_sleeper_network(
         flush_every=flush_every,
         workers=workers,
         requests_per_minute=requests_per_minute,
+        frontier_order=frontier_order,
         progress_callback=discovery_progress_printer(
             progress_every,
             initial_leagues_history_count=initial_league_count,
