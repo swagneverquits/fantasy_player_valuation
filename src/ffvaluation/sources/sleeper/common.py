@@ -67,7 +67,7 @@ def fetch_json(
             with urlopen(request, timeout=timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
-            if error.code not in (429, 500, 502, 503, 504, 522) or attempt == attempts:
+            if error.code not in (429, 500, 502, 503, 504, 522, 525) or attempt == attempts:
                 raise
             delay = retry_delay(attempt, backoff_seconds, error)
             if retry_callback is not None:
