@@ -318,13 +318,12 @@ def expand_sleeper_network(
     )
 
     target_leagues = sum(1 for league in result.leagues if league.target_format_guess)
-    remaining_frontier = sum(1 for row in result.frontier if row.expanded_at is None)
     console.print(
         f"Expanded {result.expanded_users} users, found {len(result.leagues)} leagues, "
         f"and wrote {len(result.league_users)} league-user edges "
         f"({target_leagues} target-format league guesses)"
     )
-    console.print(f"Remaining unexpanded frontier users: {remaining_frontier}")
+    console.print(f"Remaining unexpanded frontier users: {result.remaining_frontier}")
     console.print(f"Wrote SQLite discovery state to {db_path}")
 
 

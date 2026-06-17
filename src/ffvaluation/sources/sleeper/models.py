@@ -397,5 +397,5 @@ class SleeperFrontierExpansionResult:
     users: list[SleeperUserRow]
     leagues: list[SleeperLeagueRow]
     league_users: list[SleeperLeagueUserRow]
-    frontier: list[SleeperFrontierRow]
     expanded_users: int
+    remaining_frontier: int

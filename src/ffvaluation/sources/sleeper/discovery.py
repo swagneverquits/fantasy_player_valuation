@@ -89,20 +89,15 @@ def expand_user_frontier_sqlite(
         fetch_json = instrument_fetch_json(fetch_json, timing_collector)
 
     store = SleeperDiscoveryStore(db_path)
-    frontier_by_id = {row.user_id: row for row in store.read_frontier()}
-    work_rows = [
-        row
-        for row in sort_frontier_rows(frontier_by_id.values())
-        if row.expanded_at is None
-    ]
-    if max_users is not None:
-        work_rows = work_rows[:max_users]
+    work_rows = store.read_unexpanded_frontier(limit=max_users)
+    frontier_by_id = {row.user_id: row for row in work_rows}
 
     users_by_id: dict[str, SleeperUserRow] = {}
     leagues_by_id: dict[str, SleeperLeagueRow] = {}
     league_users_by_key: dict[tuple[str, str], SleeperLeagueUserRow] = {}
     league_users_fetched = store.read_league_user_ids()
     existing_league_ids = store.read_league_ids()
+    existing_frontier_ids = store.read_frontier_ids()
     new_league_ids: set[str] = set()
     league_users_fetched_lock = Lock()
     throttle = RequestThrottle(requests_per_minute, timing_collector=timing_collector)
@@ -113,7 +108,7 @@ def expand_user_frontier_sqlite(
     pending_leagues: list[SleeperLeagueRow] = []
     pending_league_users: list[SleeperLeagueUserRow] = []
     pending_frontier_by_id: dict[str, SleeperFrontierRow] = {}
-    unexpanded_frontier_count = sum(1 for row in frontier_by_id.values() if row.expanded_at is None)
+    unexpanded_frontier_count = store.count_unexpanded_frontier()
     expanded_users = 0
 
     def throttled_fetch_json(url: str) -> Any:
@@ -131,7 +126,8 @@ def expand_user_frontier_sqlite(
         for league_user in result.league_users:
             league_users_by_key[(league_user.league_id, league_user.user_id)] = league_user
         for frontier_row in result.discovered_frontier:
-            if frontier_row.user_id not in frontier_by_id:
+            if frontier_row.user_id not in existing_frontier_ids:
+                existing_frontier_ids.add(frontier_row.user_id)
                 frontier_by_id[frontier_row.user_id] = frontier_row
                 pending_frontier_by_id[frontier_row.user_id] = frontier_row
                 unexpanded_frontier_count += 1
@@ -222,7 +218,6 @@ def expand_user_frontier_sqlite(
         flush_pending()
         store.close()
 
-    frontier_rows = sort_frontier_rows(frontier_by_id.values())
     return SleeperFrontierExpansionResult(
         users=sorted(users_by_id.values(), key=lambda row: row.user_id),
         leagues=sorted(leagues_by_id.values(), key=lambda row: (row.league_season, row.league_id)),
@@ -230,8 +225,8 @@ def expand_user_frontier_sqlite(
             league_users_by_key.values(),
             key=lambda row: (row.league_season, row.league_id, row.user_id),
         ),
-        frontier=frontier_rows,
         expanded_users=expanded_users,
+        remaining_frontier=unexpanded_frontier_count,
     )
 
 
@@ -637,6 +632,10 @@ class SleeperDiscoveryStore:
             ("league_id", "user_id"),
         )
         self._create_table("frontier", USER_FRONTIER_COLUMNS, ("user_id",))
+        self._connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_frontier_expanded_at_discovered_at_user_id "
+            "ON frontier (expanded_at, discovered_at, user_id)"
+        )
 
     def _create_table(
         self,
@@ -655,6 +654,21 @@ class SleeperDiscoveryStore:
         cursor = self._connection.execute(
             f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} FROM frontier"
         )
+        return self._parse_frontier_rows(cursor.fetchall())
+
+    def read_unexpanded_frontier(self, limit: int | None) -> list[SleeperFrontierRow]:
+        limit_sql = "" if limit is None else " LIMIT ?"
+        parameters: tuple[int, ...] = () if limit is None else (limit,)
+        cursor = self._connection.execute(
+            f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} "
+            "FROM frontier "
+            "WHERE expanded_at IS NULL "
+            f"ORDER BY discovered_at, user_id{limit_sql}",
+            parameters,
+        )
+        return self._parse_frontier_rows(cursor.fetchall())
+
+    def _parse_frontier_rows(self, rows: list[tuple[Any, ...]]) -> list[SleeperFrontierRow]:
         return [
             parse_frontier_row(
                 {
@@ -662,7 +676,7 @@ class SleeperDiscoveryStore:
                     for column, value in zip(USER_FRONTIER_COLUMNS, row, strict=True)
                 }
             )
-            for row in cursor.fetchall()
+            for row in rows
         ]
 
     def read_league_ids(self) -> set[str]:
@@ -678,6 +692,20 @@ class SleeperDiscoveryStore:
             for row in self._connection.execute("SELECT DISTINCT league_id FROM league_users")
             if row[0]
         }
+
+    def read_frontier_ids(self) -> set[str]:
+        return {
+            row[0]
+            for row in self._connection.execute("SELECT user_id FROM frontier")
+            if row[0]
+        }
+
+    def count_unexpanded_frontier(self) -> int:
+        return int(
+            self._connection.execute(
+                "SELECT COUNT(*) FROM frontier WHERE expanded_at IS NULL"
+            ).fetchone()[0]
+        )
 
     def count_leagues(self) -> int:
         return self._count_table("leagues")
@@ -722,6 +750,14 @@ class SleeperDiscoveryStore:
                 rows=[format_frontier_row(row) for row in frontier],
                 columns=USER_FRONTIER_COLUMNS,
                 key_columns=("user_id",),
+                update_sql=(
+                    "username=excluded.username, "
+                    "display_name=excluded.display_name, "
+                    "discovered_from_league_id=COALESCE("
+                    "frontier.discovered_from_league_id, excluded.discovered_from_league_id"
+                    "), "
+                    "expanded_at=COALESCE(excluded.expanded_at, frontier.expanded_at)"
+                ),
             )
 
     def _upsert_rows(
@@ -731,13 +767,16 @@ class SleeperDiscoveryStore:
         rows: list[dict[str, Any]],
         columns: list[str],
         key_columns: tuple[str, ...],
+        update_sql: str | None = None,
     ) -> None:
         if not rows:
             return
         placeholders = ", ".join("?" for _ in columns)
         columns_sql = ", ".join(columns)
         update_columns = [column for column in columns if column not in key_columns]
-        update_sql = ", ".join(f"{column}=excluded.{column}" for column in update_columns)
+        update_sql = update_sql or ", ".join(
+            f"{column}=excluded.{column}" for column in update_columns
+        )
         sql = (
             f"INSERT INTO {table} ({columns_sql}) VALUES ({placeholders}) "
             f"ON CONFLICT({', '.join(key_columns)}) DO UPDATE SET {update_sql}"
