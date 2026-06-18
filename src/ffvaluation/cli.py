@@ -403,6 +403,9 @@ def discovery_timing_table(
     total_tracked_seconds = (
         snapshot.request_seconds + snapshot.throttle_wait_seconds + snapshot.flush_seconds
     )
+    http_share = timing_share(snapshot.request_seconds, total_tracked_seconds)
+    throttle_share = timing_share(snapshot.throttle_wait_seconds, total_tracked_seconds)
+    flush_share = timing_share(snapshot.flush_seconds, total_tracked_seconds)
     table = Table(title="Sleeper Discovery Progress")
     table.add_column("Metric")
     table.add_column("Value", justify="right")
@@ -412,6 +415,7 @@ def discovery_timing_table(
     table.add_row("Users expanded", str(users))
     table.add_row("Leagues seen", str(leagues_seen))
     table.add_row("New leagues", str(new_leagues))
+    table.add_row("New leagues/user", f"{safe_div(new_leagues, users):.2f}")
     table.add_row("League-user edges", str(league_users))
     table.add_row("Queued users", str(queued_users))
     if estimated_rows is not None:
@@ -423,12 +427,14 @@ def discovery_timing_table(
         "Avg request",
         format_seconds(safe_div(snapshot.request_seconds, snapshot.request_count)),
     )
-    table.add_row("HTTP time", format_seconds(snapshot.request_seconds))
-    table.add_row("Throttle wait", format_seconds(snapshot.throttle_wait_seconds))
+    table.add_row("HTTP time", format_timing_with_share(snapshot.request_seconds, http_share))
+    table.add_row(
+        "Throttle wait",
+        format_timing_with_share(snapshot.throttle_wait_seconds, throttle_share),
+    )
+    table.add_row("Flush time", format_timing_with_share(snapshot.flush_seconds, flush_share))
     table.add_section()
-    table.add_row("Flush time", format_seconds(snapshot.flush_seconds))
     table.add_row("Flushes", str(snapshot.flush_count))
-    table.add_section()
     table.add_row("Retries", str(snapshot.retry_count))
     table.add_row("Retry wait", format_seconds(snapshot.retry_wait_seconds))
     if snapshot.retry_reasons:
@@ -436,15 +442,6 @@ def discovery_timing_table(
             f"{reason}={count}" for reason, count in sorted(snapshot.retry_reasons.items())
         )
         table.add_row("Retry reasons", retry_reasons)
-    table.add_section()
-    table.add_row("New leagues/user", f"{safe_div(new_leagues, users):.2f}")
-    if total_tracked_seconds > 0:
-        table.add_row("HTTP share", f"{snapshot.request_seconds / total_tracked_seconds:.1%}")
-        table.add_row(
-            "Throttle share",
-            f"{snapshot.throttle_wait_seconds / total_tracked_seconds:.1%}",
-        )
-        table.add_row("Flush share", f"{snapshot.flush_seconds / total_tracked_seconds:.1%}")
     return table
 
 
@@ -460,6 +457,21 @@ def format_seconds(seconds: float) -> str:
     if seconds < 1:
         return f"{seconds * 1000:.0f} ms"
     return f"{seconds:.1f} s"
+
+
+def timing_share(seconds: float, total_seconds: float) -> str | None:
+    """Format one timing component's share of tracked runtime."""
+    if total_seconds <= 0:
+        return None
+    return f"{seconds / total_seconds:.1%}"
+
+
+def format_timing_with_share(seconds: float, share: str | None) -> str:
+    """Format a timing value with an optional parenthesized share."""
+    formatted = format_seconds(seconds)
+    if share is None:
+        return formatted
+    return f"{formatted} ({share})"
 
 
 def format_duration(seconds: float) -> str:
