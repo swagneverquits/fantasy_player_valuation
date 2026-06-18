@@ -15,14 +15,14 @@ Not every trade is fair. Not every manager is sharp. But across enough trades, t
 Suppose trade $t$ has two sides:
 
 $$
-A_t = \text{assets received by side A}
+A_t
 $$
 
 $$
-B_t = \text{assets received by side B}
+B_t
 $$
 
-Each side is a package of assets. Assets can be players, rookie picks, or other tradeable objects Sleeper exposes.
+Here, $A_t$ is the package received by side A, and $B_t$ is the package received by side B. Each side is a package of assets. Assets can be players, rookie picks, or other tradeable objects Sleeper exposes.
 
 The modeling assumption is:
 
@@ -110,11 +110,7 @@ where lightly traded assets get stronger shrinkage and heavily traded assets get
 
 ## 4. Why Linear Package Value Is Not Enough
 
-Consider this trade:
-
-$$
-\text{Elite Player} \leftrightarrow \text{Good Player 1} + \text{Good Player 2}
-$$
+Consider a trade where one side gets an elite player and the other side gets two good players.
 
 A linear model says:
 
@@ -124,9 +120,7 @@ $$
 
 But dynasty markets often behave more like:
 
-$$
-V(\text{Good Player 1} + \text{Good Player 2}) < v_1 + v_2
-$$
+The combined package can be worth less than the raw sum of its parts.
 
 because:
 
@@ -171,8 +165,7 @@ This lets the model learn that the second and third pieces in a package do not c
 The full objective becomes:
 
 $$
-\min_{v,d} \sum_{t \in T} \left(V_d(A_t) - V_d(B_t)\right)^2
-  + \lambda \sum_i (v_i - p_i)^2
+\min_{v,d} \left[ \sum_{t \in T} \left(V_d(A_t) - V_d(B_t)\right)^2 + \lambda \sum_i (v_i - p_i)^2 \right]
 $$
 
 where $V_d(\cdot)$ is the discounted package function.
@@ -186,8 +179,10 @@ If a side receives more assets than it sends, it may need to cut players or use 
 Let:
 
 $$
-n(P) = \text{number of assets in package } P
+n(P)
 $$
+
+Here, $n(P)$ is the number of assets in package $P$.
 
 For a trade side, define net incoming roster pressure:
 
@@ -205,9 +200,7 @@ where $\rho$ is the learned cost of an extra roster spot.
 
 This gives the model a way to explain why:
 
-$$
-3 \text{ okay players} \not\approx 1 \text{ elite player}
-$$
+> Three okay players are often not equivalent to one elite player.
 
 even when the public chart sum looks close.
 
@@ -227,21 +220,22 @@ $$
 L(e_t) = |e_t|
 $$
 
-Or Huber loss:
+Or Huber loss. For small errors:
 
 $$
-L_\delta(e_t) =
-\begin{cases}
-\frac{1}{2}e_t^2, & |e_t| \le \delta \\
-\delta(|e_t| - \frac{1}{2}\delta), & |e_t| > \delta
-\end{cases}
+L_\delta(e_t) = \frac{1}{2}e_t^2
+$$
+
+For large errors:
+
+$$
+L_\delta(e_t) = \delta\left(|e_t| - \frac{1}{2}\delta\right)
 $$
 
 Then the objective becomes:
 
 $$
-\min_\theta \sum_{t \in T} L\left(V_\theta(A_t) - V_\theta(B_t)\right)
-  + R(\theta)
+\min_\theta \left[ \sum_{t \in T} L\left(V_\theta(A_t) - V_\theta(B_t)\right) + R(\theta) \right]
 $$
 
 where $\theta$ includes asset values and package parameters, and $R(\theta)$ is regularization.
@@ -263,13 +257,13 @@ $$
 A simple likelihood could say that balanced trades are more probable when $\Delta_t$ is near zero:
 
 $$
-P(\text{trade } t \text{ occurs}) \propto \exp(-|\Delta_t|)
+P(t) \propto \exp(-|\Delta_t|)
 $$
 
 Or:
 
 $$
-P(\text{trade } t \text{ occurs}) \propto \exp(-\Delta_t^2)
+P(t) \propto \exp(-\Delta_t^2)
 $$
 
 This is basically the same instinct as balance-error minimization, but with a probabilistic interpretation.
@@ -311,12 +305,16 @@ $$
 
 Useful metrics:
 
-$$
-\text{MAE} = \frac{1}{|T|} \sum_{t \in T} |\hat{e}_t|
-$$
+Mean absolute error:
 
 $$
-\text{RMSE} = \sqrt{\frac{1}{|T|} \sum_{t \in T} \hat{e}_t^2}
+\mathrm{MAE} = \frac{1}{|T|} \sum_{t \in T} |\hat{e}_t|
+$$
+
+Root mean squared error:
+
+$$
+\mathrm{RMSE} = \sqrt{\frac{1}{|T|} \sum_{t \in T} \hat{e}_t^2}
 $$
 
 Also inspect:
@@ -358,26 +356,12 @@ The best output is not just a ranking table. It is a ranking table plus an expla
 
 The core modeling stack is:
 
-$$
-\text{Observed trades}
-\rightarrow
-\text{package balance objective}
-\rightarrow
-\text{asset values}
-\rightarrow
-\text{package discounts}
-\rightarrow
-\text{diagnostics}
-$$
+> Observed trades -> package balance objective -> asset values -> package discounts -> diagnostics
 
 The first useful model should probably be:
 
 $$
-\min_{v,d}
-\sum_{t \in T}
-L\left(V_d(A_t) - V_d(B_t)\right)
-+
-\lambda \sum_i (v_i - p_i)^2
+\min_{v,d} \left[ \sum_{t \in T} L\left(V_d(A_t) - V_d(B_t)\right) + \lambda \sum_i (v_i - p_i)^2 \right]
 $$
 
 with:
