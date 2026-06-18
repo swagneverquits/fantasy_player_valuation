@@ -414,6 +414,7 @@ def discovery_timing_table(
     table.add_row("Queued users", str(queued_users))
     if estimated_rows is not None:
         table.add_row("Leagues history est.", f"~{estimated_rows}")
+    table.add_row("Uptime", format_duration(snapshot.elapsed_seconds))
     table.add_row("Requests", str(snapshot.request_count))
     table.add_row("Requests/min", f"{snapshot.request_count / elapsed_minutes:.1f}")
     table.add_row(
@@ -454,6 +455,18 @@ def format_seconds(seconds: float) -> str:
     if seconds < 1:
         return f"{seconds * 1000:.0f} ms"
     return f"{seconds:.1f} s"
+
+
+def format_duration(seconds: float) -> str:
+    """Format elapsed duration as hours, minutes, and seconds."""
+    total_seconds = int(seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
 
 
 def load_env_value(name: str, env_path: Path = Path(".env")) -> str | None:
