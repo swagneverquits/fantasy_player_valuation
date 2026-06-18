@@ -87,24 +87,23 @@ That prior can come from RosterAudit, KeepTradeCut, an average of sources, or a 
 Then we penalize moving too far from the prior:
 
 $$
-\min_v \sum_{t \in T} \left(V(A_t) - V(B_t)\right)^2
-  + \lambda \sum_i (v_i - p_i)^2
+\min_v \left[ \sum_{t \in T} \left(V(A_t) - V(B_t)\right)^2 + \lambda \sum_i (v_i - p_i)^2 \right]
 $$
 
 Here:
 
 - $v_i$ is the learned value.
 - $p_i$ is the prior value.
-- $\lambda$ controls how sticky the prior is.
+- $\lambda$ is the prior-strength parameter.
 
-High $\lambda$: values stay close to the prior.
+High prior strength: values stay close to the prior.
 
-Low $\lambda$: trades move values more aggressively.
+Low prior strength: trades move values more aggressively.
 
 A better version can make the penalty depend on observation count:
 
 $$
-\lambda_i (v_i - p_i)^2
+\lambda_i \left(v_i - p_i\right)^2
 $$
 
 where lightly traded assets get stronger shrinkage and heavily traded assets get more freedom.
