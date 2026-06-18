@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import csv
+import http.client
 import json
 import os
 import socket
+import ssl
 import time
 import uuid
 from collections.abc import Callable, Iterable
@@ -15,6 +17,7 @@ from urllib.request import Request, urlopen
 
 
 BASE_URL = "https://api.sleeper.app/v1"
+RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504, 522, 525}
 
 FetchJson = Callable[[str], Any]
 RetryCallback = Callable[[str, float], None]
@@ -67,13 +70,23 @@ def fetch_json(
             with urlopen(request, timeout=timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
-            if error.code not in (429, 500, 502, 503, 504, 522, 525) or attempt == attempts:
+            if error.code not in RETRYABLE_HTTP_CODES or attempt == attempts:
                 raise
             delay = retry_delay(attempt, backoff_seconds, error)
             if retry_callback is not None:
                 retry_callback(str(error.code), delay)
             time.sleep(delay)
-        except (TimeoutError, socket.timeout, URLError, ConnectionResetError) as error:
+        except (
+            TimeoutError,
+            socket.timeout,
+            URLError,
+            ConnectionError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            OSError,
+            ssl.SSLError,
+            UnicodeDecodeError,
+        ) as error:
             if not is_retryable_network_error(error) or attempt == attempts:
                 raise
             delay = retry_delay(attempt, backoff_seconds)
@@ -158,10 +171,22 @@ def retry_delay(
 
 def is_retryable_network_error(error: BaseException) -> bool:
     """Return whether a network exception should be retried."""
-    if isinstance(error, (TimeoutError, socket.timeout, ConnectionResetError)):
+    if isinstance(
+        error,
+        (
+            TimeoutError,
+            socket.timeout,
+            ConnectionError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            OSError,
+            ssl.SSLError,
+            UnicodeDecodeError,
+        ),
+    ):
         return True
     if isinstance(error, URLError):
-        return isinstance(error.reason, (TimeoutError, socket.timeout, ConnectionResetError))
+        return is_retryable_network_error(error.reason)
     return False
 
 
@@ -169,10 +194,30 @@ def retry_reason(error: BaseException) -> str:
     """Normalize a retryable exception into a telemetry reason."""
     if isinstance(error, (TimeoutError, socket.timeout)):
         return "timeout"
-    if isinstance(error, ConnectionResetError):
-        return "connection_reset"
     if isinstance(error, URLError):
         return retry_reason(error.reason)
+    if isinstance(error, json.JSONDecodeError):
+        return "json_decode"
+    if isinstance(error, UnicodeDecodeError):
+        return "unicode_decode"
+    if isinstance(error, ssl.SSLError):
+        return "ssl"
+    if isinstance(error, http.client.RemoteDisconnected):
+        return "remote_disconnected"
+    if isinstance(error, http.client.IncompleteRead):
+        return "incomplete_read"
+    if isinstance(error, http.client.HTTPException):
+        return "http_exception"
+    if isinstance(error, ConnectionResetError):
+        return "connection_reset"
+    if isinstance(error, ConnectionAbortedError):
+        return "connection_aborted"
+    if isinstance(error, ConnectionRefusedError):
+        return "connection_refused"
+    if isinstance(error, socket.gaierror):
+        return "dns"
+    if isinstance(error, OSError):
+        return "os_error"
     return type(error).__name__
 
 

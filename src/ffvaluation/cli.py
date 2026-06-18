@@ -407,6 +407,8 @@ def discovery_timing_table(
     table.add_column("Metric")
     table.add_column("Value", justify="right")
 
+    table.add_row("Uptime", format_duration(snapshot.elapsed_seconds))
+    table.add_section()
     table.add_row("Users expanded", str(users))
     table.add_row("Leagues seen", str(leagues_seen))
     table.add_row("New leagues", str(new_leagues))
@@ -414,7 +416,7 @@ def discovery_timing_table(
     table.add_row("Queued users", str(queued_users))
     if estimated_rows is not None:
         table.add_row("Leagues history est.", f"~{estimated_rows}")
-    table.add_row("Uptime", format_duration(snapshot.elapsed_seconds))
+    table.add_section()
     table.add_row("Requests", str(snapshot.request_count))
     table.add_row("Requests/min", f"{snapshot.request_count / elapsed_minutes:.1f}")
     table.add_row(
@@ -423,8 +425,10 @@ def discovery_timing_table(
     )
     table.add_row("HTTP time", format_seconds(snapshot.request_seconds))
     table.add_row("Throttle wait", format_seconds(snapshot.throttle_wait_seconds))
+    table.add_section()
     table.add_row("Flush time", format_seconds(snapshot.flush_seconds))
     table.add_row("Flushes", str(snapshot.flush_count))
+    table.add_section()
     table.add_row("Retries", str(snapshot.retry_count))
     table.add_row("Retry wait", format_seconds(snapshot.retry_wait_seconds))
     if snapshot.retry_reasons:
@@ -432,6 +436,7 @@ def discovery_timing_table(
             f"{reason}={count}" for reason, count in sorted(snapshot.retry_reasons.items())
         )
         table.add_row("Retry reasons", retry_reasons)
+    table.add_section()
     table.add_row("New leagues/user", f"{safe_div(new_leagues, users):.2f}")
     if total_tracked_seconds > 0:
         table.add_row("HTTP share", f"{snapshot.request_seconds / total_tracked_seconds:.1%}")
