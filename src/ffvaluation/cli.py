@@ -286,7 +286,7 @@ def expand_sleeper_network(
     frontier_order: str = typer.Option(
         "oldest",
         "--frontier-order",
-        help="Unexpanded frontier order: oldest or newest.",
+        help="Unexpanded frontier order: oldest, newest, or random.",
     ),
     timing: bool = typer.Option(
         False,
@@ -297,8 +297,8 @@ def expand_sleeper_network(
     """Expand the persistent Sleeper user frontier."""
 
     db_path = db_path or output_dir / "discovery.sqlite"
-    if frontier_order not in {"oldest", "newest"}:
-        raise typer.BadParameter("--frontier-order must be oldest or newest.")
+    if frontier_order not in {"oldest", "newest", "random"}:
+        raise typer.BadParameter("--frontier-order must be oldest, newest, or random.")
     store = SleeperDiscoveryStore(db_path)
     if not store.read_frontier():
         store.close()

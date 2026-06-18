@@ -695,16 +695,20 @@ class SleeperDiscoveryStore:
         frontier_order: str = "oldest",
     ) -> list[SleeperFrontierRow]:
         """Read the next unexpanded frontier rows in the requested order."""
-        if frontier_order not in {"oldest", "newest"}:
-            raise ValueError("frontier_order must be 'oldest' or 'newest'")
+        if frontier_order not in {"oldest", "newest", "random"}:
+            raise ValueError("frontier_order must be 'oldest', 'newest', or 'random'")
         limit_sql = "" if limit is None else " LIMIT ?"
         parameters: tuple[int, ...] = () if limit is None else (limit,)
-        direction = "DESC" if frontier_order == "newest" else "ASC"
+        order_sql = (
+            "random()"
+            if frontier_order == "random"
+            else f"discovered_at {'DESC' if frontier_order == 'newest' else 'ASC'}, user_id"
+        )
         cursor = self._connection.execute(
             f"SELECT {', '.join(USER_FRONTIER_COLUMNS)} "
             "FROM frontier "
             "WHERE expanded_at IS NULL "
-            f"ORDER BY discovered_at {direction}, user_id{limit_sql}",
+            f"ORDER BY {order_sql}{limit_sql}",
             parameters,
         )
         return self.parse_frontier_rows(cursor.fetchall())
