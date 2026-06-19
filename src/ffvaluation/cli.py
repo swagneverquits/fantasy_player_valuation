@@ -363,6 +363,11 @@ def discovery_progress_printer(
                 None if previous_queued_users is None else queued_users - previous_queued_users
             )
             user_delta = None if previous_users is None else users - previous_users
+            queued_delta_per_user = (
+                None
+                if queued_delta is None or user_delta is None
+                else safe_div(queued_delta, user_delta)
+            )
             previous_queued_users = queued_users
             previous_users = users
             if timing_collector is None:
@@ -388,7 +393,7 @@ def discovery_progress_printer(
                     new_leagues=new_leagues,
                     league_users=league_users,
                     queued_users=queued_users,
-                    queued_delta_per_user=safe_div(queued_delta, user_delta),
+                    queued_delta_per_user=queued_delta_per_user,
                     estimated_rows=estimated_rows,
                     timing_collector=timing_collector,
                 )
