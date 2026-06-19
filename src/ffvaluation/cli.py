@@ -344,6 +344,7 @@ def discovery_progress_printer(
     if every <= 0:
         return None
     previous_queued_users: int | None = None
+    previous_users: int | None = None
 
     def print_progress(
         users: int,
@@ -353,7 +354,7 @@ def discovery_progress_printer(
         queued_users: int,
     ) -> None:
         """Print periodic Sleeper discovery progress."""
-        nonlocal previous_queued_users
+        nonlocal previous_queued_users, previous_users
         if users == 1 or users % every == 0:
             estimated_rows = None
             if initial_leagues_history_count is not None:
@@ -361,7 +362,9 @@ def discovery_progress_printer(
             queued_delta = (
                 None if previous_queued_users is None else queued_users - previous_queued_users
             )
+            user_delta = None if previous_users is None else users - previous_users
             previous_queued_users = queued_users
+            previous_users = users
             if timing_collector is None:
                 leagues_history_count = (
                     f", leagues_history ~{estimated_rows} rows"
@@ -385,7 +388,7 @@ def discovery_progress_printer(
                     new_leagues=new_leagues,
                     league_users=league_users,
                     queued_users=queued_users,
-                    queued_delta=queued_delta,
+                    queued_delta_per_user=safe_div(queued_delta, user_delta),
                     estimated_rows=estimated_rows,
                     timing_collector=timing_collector,
                 )
@@ -401,7 +404,7 @@ def discovery_timing_table(
     new_leagues: int,
     league_users: int,
     queued_users: int,
-    queued_delta: int | None,
+    queued_delta_per_user: float | None,
     estimated_rows: int | None,
     timing_collector: DiscoveryTiming,
 ) -> Table:
@@ -424,7 +427,7 @@ def discovery_timing_table(
     table.add_row("Users expanded", str(users), "")
     table.add_row("Leagues seen", str(leagues_seen), "")
     table.add_row("New leagues", str(new_leagues), f"{safe_div(new_leagues, users):.2f}/user")
-    table.add_row("Queued users", str(queued_users), format_signed_count(queued_delta))
+    table.add_row("Queued users", str(queued_users), format_signed_rate(queued_delta_per_user))
     if estimated_rows is not None:
         table.add_row("Leagues history est.", f"~{estimated_rows}", "")
     table.add_section()
@@ -463,11 +466,11 @@ def format_seconds(seconds: float) -> str:
     return f"{seconds:.1f} s"
 
 
-def format_signed_count(value: int | None) -> str:
-    """Format an optional signed integer for CLI notes."""
+def format_signed_rate(value: float | None) -> str:
+    """Format an optional signed per-user rate for CLI notes."""
     if value is None:
         return ""
-    return f"{value:+d}"
+    return f"{value:+.2f}/user"
 
 
 def timing_share(seconds: float, total_seconds: float) -> str | None:
