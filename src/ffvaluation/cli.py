@@ -345,6 +345,7 @@ def discovery_progress_printer(
         return None
     previous_queued_users: int | None = None
     previous_users: int | None = None
+    previous_new_leagues: int | None = None
 
     def print_progress(
         users: int,
@@ -354,20 +355,29 @@ def discovery_progress_printer(
         queued_users: int,
     ) -> None:
         """Print periodic Sleeper discovery progress."""
-        nonlocal previous_queued_users, previous_users
+        nonlocal previous_queued_users, previous_users, previous_new_leagues
         if users % every == 0:
             estimated_rows = None
             if initial_leagues_history_count is not None:
                 estimated_rows = initial_leagues_history_count + new_leagues
+            new_leagues_delta = (
+                None if previous_new_leagues is None else new_leagues - previous_new_leagues
+            )
             queued_delta = (
                 None if previous_queued_users is None else queued_users - previous_queued_users
             )
             user_delta = None if previous_users is None else users - previous_users
+            new_leagues_delta_per_user = (
+                None
+                if new_leagues_delta is None or user_delta is None
+                else safe_div(new_leagues_delta, user_delta)
+            )
             queued_delta_per_user = (
                 None
                 if queued_delta is None or user_delta is None
                 else safe_div(queued_delta, user_delta)
             )
+            previous_new_leagues = new_leagues
             previous_queued_users = queued_users
             previous_users = users
             if timing_collector is None:
@@ -391,6 +401,8 @@ def discovery_progress_printer(
                     users=users,
                     leagues_seen=leagues_seen,
                     new_leagues=new_leagues,
+                    new_leagues_delta=new_leagues_delta,
+                    new_leagues_delta_per_user=new_leagues_delta_per_user,
                     league_users=league_users,
                     queued_users=queued_users,
                     queued_delta_per_user=queued_delta_per_user,
@@ -407,6 +419,8 @@ def discovery_timing_table(
     users: int,
     leagues_seen: int,
     new_leagues: int,
+    new_leagues_delta: int | None,
+    new_leagues_delta_per_user: float | None,
     league_users: int,
     queued_users: int,
     queued_delta_per_user: float | None,
@@ -431,7 +445,11 @@ def discovery_timing_table(
     table.add_section()
     table.add_row("Users expanded", str(users), "")
     table.add_row("Leagues seen", str(leagues_seen), "")
-    table.add_row("New leagues", str(new_leagues), f"{safe_div(new_leagues, users):.2f}/user")
+    table.add_row(
+        "New leagues",
+        str(new_leagues),
+        format_delta_rate(new_leagues_delta, new_leagues_delta_per_user),
+    )
     table.add_row("Queued users", str(queued_users), format_signed_rate(queued_delta_per_user))
     if estimated_rows is not None:
         table.add_row("Leagues history est.", f"~{estimated_rows}", "")
@@ -475,6 +493,13 @@ def format_signed_rate(value: float | None) -> str:
     if value is None:
         return ""
     return f"{value:+.2f}/user"
+
+
+def format_delta_rate(delta: int | None, rate: float | None) -> str:
+    """Format an optional signed count delta with a per-user rate."""
+    if delta is None or rate is None:
+        return ""
+    return f"{delta:+d}, {rate:+.2f}/user"
 
 
 def timing_share(seconds: float, total_seconds: float) -> str | None:
