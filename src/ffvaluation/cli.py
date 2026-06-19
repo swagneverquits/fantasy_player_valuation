@@ -363,10 +363,13 @@ def discovery_progress_printer(
             estimated_rows = None
             if initial_leagues_history_count is not None:
                 estimated_rows = initial_leagues_history_count + new_leagues
+            new_users = (
+                None if initial_queued_users is None else queued_users - initial_queued_users + users
+            )
             new_users_per_user = (
                 None
-                if initial_queued_users is None
-                else safe_div(queued_users - initial_queued_users + users, users)
+                if new_users is None
+                else safe_div(new_users, users)
             )
             if timing_collector is None:
                 leagues_history_count = (
@@ -391,6 +394,7 @@ def discovery_progress_printer(
                     average_seconds_per_interval=average_seconds_per_interval,
                     leagues_seen=leagues_seen,
                     new_leagues=new_leagues,
+                    new_users=new_users,
                     league_users=league_users,
                     queued_users=queued_users,
                     new_users_per_user=new_users_per_user,
@@ -409,6 +413,7 @@ def discovery_timing_table(
     average_seconds_per_interval: float | None,
     leagues_seen: int,
     new_leagues: int,
+    new_users: int | None,
     league_users: int,
     queued_users: int,
     new_users_per_user: float | None,
@@ -442,7 +447,11 @@ def discovery_timing_table(
         str(new_leagues),
         format_signed_rate(safe_div(new_leagues, users)),
     )
-    table.add_row("New users", "", format_new_user_rate(new_users_per_user))
+    table.add_row(
+        "New users",
+        "" if new_users is None else str(new_users),
+        format_new_user_rate(new_users_per_user),
+    )
     if estimated_rows is not None:
         table.add_row("Unique leagues", str(estimated_rows), "")
     table.add_row("Queued users", str(queued_users), "")
