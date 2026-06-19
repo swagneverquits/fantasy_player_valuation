@@ -259,38 +259,38 @@ def expand_sleeper_network(
         help="SQLite discovery database path. Defaults to <output-dir>/discovery.sqlite.",
     ),
     max_users: int | None = typer.Option(
-        1000,
+        None,
         "--max-users",
         help="Maximum unexpanded frontier users to process in this run. Omit for no cap.",
     ),
     progress_every: int = typer.Option(
-        25,
+        100,
         "--progress-every",
         help="Print discovery progress every N expanded users. Use 0 to disable.",
     ),
     flush_every: int = typer.Option(
-        25,
+        100,
         "--flush-every",
         help="Flush SQLite discovery state every N expanded users. Lower is safer; higher is faster.",
     ),
     workers: int = typer.Option(
-        1,
+        10,
         "--workers",
         help="Concurrent discovery workers. Use 1 for serial mode.",
     ),
     requests_per_minute: int = typer.Option(
-        500,
+        1000,
         "--requests-per-minute",
         help="Global Sleeper API request throttle.",
     ),
     frontier_order: str = typer.Option(
-        "oldest",
+        "random",
         "--frontier-order",
         help="Unexpanded frontier order: oldest, newest, or random.",
     ),
     timing: bool = typer.Option(
-        False,
-        "--timing",
+        True,
+        "--timing/--no-timing",
         help="Print request, throttle, and flush timing telemetry with progress.",
     ),
 ) -> None:
