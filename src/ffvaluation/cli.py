@@ -343,6 +343,7 @@ def discovery_progress_printer(
     """Build a Sleeper discovery progress callback."""
     if every <= 0:
         return None
+    previous_queued_users: int | None = None
 
     def print_progress(
         users: int,
@@ -352,10 +353,15 @@ def discovery_progress_printer(
         queued_users: int,
     ) -> None:
         """Print periodic Sleeper discovery progress."""
+        nonlocal previous_queued_users
         if users == 1 or users % every == 0:
             estimated_rows = None
             if initial_leagues_history_count is not None:
                 estimated_rows = initial_leagues_history_count + new_leagues
+            queued_delta = (
+                None if previous_queued_users is None else queued_users - previous_queued_users
+            )
+            previous_queued_users = queued_users
             if timing_collector is None:
                 leagues_history_count = (
                     f", leagues_history ~{estimated_rows} rows"
@@ -379,6 +385,7 @@ def discovery_progress_printer(
                     new_leagues=new_leagues,
                     league_users=league_users,
                     queued_users=queued_users,
+                    queued_delta=queued_delta,
                     estimated_rows=estimated_rows,
                     timing_collector=timing_collector,
                 )
@@ -394,6 +401,7 @@ def discovery_timing_table(
     new_leagues: int,
     league_users: int,
     queued_users: int,
+    queued_delta: int | None,
     estimated_rows: int | None,
     timing_collector: DiscoveryTiming,
 ) -> Table:
@@ -417,7 +425,7 @@ def discovery_timing_table(
     table.add_row("Leagues seen", str(leagues_seen), "")
     table.add_row("New leagues", str(new_leagues), f"{safe_div(new_leagues, users):.2f}/user")
     table.add_row("League-user edges", str(league_users), "")
-    table.add_row("Queued users", str(queued_users), "")
+    table.add_row("Queued users", str(queued_users), format_signed_count(queued_delta))
     if estimated_rows is not None:
         table.add_row("Leagues history est.", f"~{estimated_rows}", "")
     table.add_section()
@@ -454,6 +462,13 @@ def format_seconds(seconds: float) -> str:
     if seconds < 1:
         return f"{seconds * 1000:.0f} ms"
     return f"{seconds:.1f} s"
+
+
+def format_signed_count(value: int | None) -> str:
+    """Format an optional signed integer for CLI notes."""
+    if value is None:
+        return ""
+    return f"{value:+d}"
 
 
 def timing_share(seconds: float, total_seconds: float) -> str | None:
