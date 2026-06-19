@@ -441,7 +441,6 @@ def discovery_timing_table(
         str(users),
         format_interval_duration(average_seconds_per_interval, progress_every),
     )
-    table.add_row("Leagues seen", str(leagues_seen), "")
     table.add_row(
         "New leagues",
         str(new_leagues),
