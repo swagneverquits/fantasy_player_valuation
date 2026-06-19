@@ -356,6 +356,10 @@ def discovery_progress_printer(
     ) -> None:
         """Print periodic Sleeper discovery progress."""
         if users % every == 0:
+            snapshot = timing_collector.snapshot() if timing_collector is not None else None
+            average_seconds_per_interval = (
+                None if snapshot is None else safe_div(snapshot.elapsed_seconds * every, users)
+            )
             estimated_rows = None
             if initial_leagues_history_count is not None:
                 estimated_rows = initial_leagues_history_count + new_leagues
@@ -383,6 +387,8 @@ def discovery_progress_printer(
             console.print(
                 discovery_timing_table(
                     users=users,
+                    progress_every=every,
+                    average_seconds_per_interval=average_seconds_per_interval,
                     leagues_seen=leagues_seen,
                     new_leagues=new_leagues,
                     league_users=league_users,
@@ -399,6 +405,8 @@ def discovery_progress_printer(
 def discovery_timing_table(
     *,
     users: int,
+    progress_every: int,
+    average_seconds_per_interval: float | None,
     leagues_seen: int,
     new_leagues: int,
     league_users: int,
@@ -423,7 +431,11 @@ def discovery_timing_table(
 
     table.add_row("Uptime", format_duration(snapshot.elapsed_seconds), "")
     table.add_section()
-    table.add_row("Users expanded", str(users), "")
+    table.add_row(
+        "Users expanded",
+        str(users),
+        format_interval_duration(average_seconds_per_interval, progress_every),
+    )
     table.add_row("Leagues seen", str(leagues_seen), "")
     table.add_row(
         "New leagues",
@@ -471,6 +483,13 @@ def format_seconds(seconds: float) -> str:
     if seconds < 1:
         return f"{seconds * 1000:.0f} ms"
     return f"{seconds:.1f} s"
+
+
+def format_interval_duration(seconds: float | None, progress_every: int) -> str:
+    """Format elapsed time for one progress interval."""
+    if seconds is None:
+        return ""
+    return f"{format_duration(seconds)}/{progress_every}"
 
 
 def format_signed_rate(value: float | None) -> str:
