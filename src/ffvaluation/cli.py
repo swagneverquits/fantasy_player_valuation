@@ -430,10 +430,10 @@ def discovery_timing_table(
         str(new_leagues),
         format_signed_rate(safe_div(new_leagues, users)),
     )
-    table.add_row("New queued users", "", format_new_user_rate(new_users_per_user))
-    table.add_row("Queued users", str(queued_users), "")
+    table.add_row("New users", "", format_new_user_rate(new_users_per_user))
     if estimated_rows is not None:
-        table.add_row("Leagues", str(estimated_rows), "")
+        table.add_row("Unique leagues", str(estimated_rows), "")
+    table.add_row("Queued users", str(queued_users), "")
     table.add_section()
     table.add_row("Requests", str(snapshot.request_count), f"{snapshot.request_count / elapsed_minutes:.1f}/min")
     table.add_row(
