@@ -442,8 +442,7 @@ def discovery_timing_table(
     table.add_row("Flush time", format_seconds(snapshot.flush_seconds), flush_share or "")
     table.add_section()
     table.add_row("Flushes", str(snapshot.flush_count), "")
-    table.add_row("Retries", str(snapshot.retry_count), "")
-    table.add_row("Retry wait", format_seconds(snapshot.retry_wait_seconds), "")
+    table.add_row("Retries", str(snapshot.retry_count), format_seconds(snapshot.retry_wait_seconds))
     if snapshot.retry_reasons:
         retry_reasons = ", ".join(
             f"{reason}={count}" for reason, count in sorted(snapshot.retry_reasons.items())
