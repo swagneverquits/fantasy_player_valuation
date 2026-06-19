@@ -355,7 +355,7 @@ def discovery_progress_printer(
     ) -> None:
         """Print periodic Sleeper discovery progress."""
         nonlocal previous_queued_users, previous_users
-        if users == 1 or users % every == 0:
+        if users % every == 0:
             estimated_rows = None
             if initial_leagues_history_count is not None:
                 estimated_rows = initial_leagues_history_count + new_leagues
