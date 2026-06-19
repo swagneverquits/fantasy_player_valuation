@@ -306,6 +306,7 @@ def expand_sleeper_network(
             f"No frontier users found in {db_path}. Run seed-sleeper-network first."
         )
     initial_league_count = store.count_leagues()
+    initial_queued_users = store.count_unexpanded_frontier()
     store.close()
 
     timing_collector = DiscoveryTiming() if timing else None
@@ -320,6 +321,7 @@ def expand_sleeper_network(
         progress_callback=discovery_progress_printer(
             progress_every,
             initial_leagues_history_count=initial_league_count,
+            initial_queued_users=initial_queued_users,
             timing_collector=timing_collector,
         ),
         timing_collector=timing_collector,
@@ -338,13 +340,12 @@ def expand_sleeper_network(
 def discovery_progress_printer(
     every: int,
     initial_leagues_history_count: int | None = None,
+    initial_queued_users: int | None = None,
     timing_collector: DiscoveryTiming | None = None,
 ):
     """Build a Sleeper discovery progress callback."""
     if every <= 0:
         return None
-    previous_queued_users: int | None = None
-    previous_users: int | None = None
 
     def print_progress(
         users: int,
@@ -354,22 +355,15 @@ def discovery_progress_printer(
         queued_users: int,
     ) -> None:
         """Print periodic Sleeper discovery progress."""
-        nonlocal previous_queued_users, previous_users
         if users % every == 0:
             estimated_rows = None
             if initial_leagues_history_count is not None:
                 estimated_rows = initial_leagues_history_count + new_leagues
-            queued_delta = (
-                None if previous_queued_users is None else queued_users - previous_queued_users
-            )
-            user_delta = None if previous_users is None else users - previous_users
-            queued_delta_per_user = (
+            new_users_per_user = (
                 None
-                if queued_delta is None or user_delta is None
-                else safe_div(queued_delta, user_delta)
+                if initial_queued_users is None
+                else safe_div(queued_users - initial_queued_users + users, users)
             )
-            previous_queued_users = queued_users
-            previous_users = users
             if timing_collector is None:
                 leagues_history_count = (
                     f", leagues_history ~{estimated_rows} rows"
@@ -393,7 +387,7 @@ def discovery_progress_printer(
                     new_leagues=new_leagues,
                     league_users=league_users,
                     queued_users=queued_users,
-                    queued_delta_per_user=queued_delta_per_user,
+                    new_users_per_user=new_users_per_user,
                     estimated_rows=estimated_rows,
                     timing_collector=timing_collector,
                 )
@@ -409,7 +403,7 @@ def discovery_timing_table(
     new_leagues: int,
     league_users: int,
     queued_users: int,
-    queued_delta_per_user: float | None,
+    new_users_per_user: float | None,
     estimated_rows: int | None,
     timing_collector: DiscoveryTiming,
 ) -> Table:
@@ -436,7 +430,7 @@ def discovery_timing_table(
         str(new_leagues),
         format_signed_rate(safe_div(new_leagues, users)),
     )
-    table.add_row("Queued users", str(queued_users), format_signed_rate(queued_delta_per_user))
+    table.add_row("Queued users", str(queued_users), format_new_user_rate(new_users_per_user))
     if estimated_rows is not None:
         table.add_row("Leagues history est.", f"~{estimated_rows}", "")
     table.add_section()
@@ -479,6 +473,13 @@ def format_signed_rate(value: float | None) -> str:
     if value is None:
         return ""
     return f"{value:+.2f}/user"
+
+
+def format_new_user_rate(value: float | None) -> str:
+    """Format an optional cumulative new-user discovery rate."""
+    if value is None:
+        return ""
+    return f"+{value:.2f} new/user"
 
 
 def timing_share(seconds: float, total_seconds: float) -> str | None:
