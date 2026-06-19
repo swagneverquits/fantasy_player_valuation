@@ -430,9 +430,10 @@ def discovery_timing_table(
         str(new_leagues),
         format_signed_rate(safe_div(new_leagues, users)),
     )
-    table.add_row("Queued users", str(queued_users), format_new_user_rate(new_users_per_user))
+    table.add_row("New queued users", "", format_new_user_rate(new_users_per_user))
+    table.add_row("Queued users", str(queued_users), "")
     if estimated_rows is not None:
-        table.add_row("Leagues history est.", f"~{estimated_rows}", "")
+        table.add_row("Leagues", str(estimated_rows), "")
     table.add_section()
     table.add_row("Requests", str(snapshot.request_count), f"{snapshot.request_count / elapsed_minutes:.1f}/min")
     table.add_row(
@@ -479,7 +480,7 @@ def format_new_user_rate(value: float | None) -> str:
     """Format an optional cumulative new-user discovery rate."""
     if value is None:
         return ""
-    return f"+{value:.2f} new/user"
+    return f"+{value:.2f}/user"
 
 
 def timing_share(seconds: float, total_seconds: float) -> str | None:
