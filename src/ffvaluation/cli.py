@@ -442,7 +442,11 @@ def discovery_timing_table(
         "",
     )
     table.add_row("HTTP time", format_seconds(snapshot.request_seconds), http_share or "")
-    table.add_row("Throttle wait", format_seconds(snapshot.throttle_wait_seconds), throttle_share or "")
+    table.add_row(
+        "Throttle wait time",
+        format_seconds(snapshot.throttle_wait_seconds),
+        throttle_share or "",
+    )
     table.add_row("Flush time", format_seconds(snapshot.flush_seconds), flush_share or "")
     table.add_section()
     table.add_row("Flushes", str(snapshot.flush_count), "")
