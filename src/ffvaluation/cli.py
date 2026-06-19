@@ -424,7 +424,6 @@ def discovery_timing_table(
     table.add_row("Users expanded", str(users), "")
     table.add_row("Leagues seen", str(leagues_seen), "")
     table.add_row("New leagues", str(new_leagues), f"{safe_div(new_leagues, users):.2f}/user")
-    table.add_row("League-user edges", str(league_users), "")
     table.add_row("Queued users", str(queued_users), format_signed_count(queued_delta))
     if estimated_rows is not None:
         table.add_row("Leagues history est.", f"~{estimated_rows}", "")
