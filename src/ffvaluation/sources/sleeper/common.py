@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 
 BASE_URL = "https://api.sleeper.app/v1"
-RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504, 522, 525}
+RETRYABLE_HTTP_CODES = {408, 409, 425, 429}
 
 FetchJson = Callable[[str], Any]
 RetryCallback = Callable[[str, float], None]
@@ -70,7 +70,7 @@ def fetch_json(
             with urlopen(request, timeout=timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
-            if error.code not in RETRYABLE_HTTP_CODES or attempt == attempts:
+            if not is_retryable_http_error(error) or attempt == attempts:
                 raise
             delay = retry_delay(attempt, backoff_seconds, error)
             if retry_callback is not None:
@@ -95,6 +95,11 @@ def fetch_json(
             time.sleep(delay)
 
     raise RuntimeError(f"Failed to fetch {url}")
+
+
+def is_retryable_http_error(error: HTTPError) -> bool:
+    """Return whether an HTTP response should be retried."""
+    return error.code in RETRYABLE_HTTP_CODES or 500 <= error.code <= 599
 
 
 def upsert_csv(
