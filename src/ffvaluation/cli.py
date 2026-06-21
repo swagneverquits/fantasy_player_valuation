@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -346,6 +347,8 @@ def discovery_progress_printer(
     """Build a Sleeper discovery progress callback."""
     if every <= 0:
         return None
+    rolling_window_users = 1000
+    rolling_snapshots: deque[tuple[int, int, int | None]] = deque()
 
     def print_progress(
         users: int,
@@ -371,6 +374,21 @@ def discovery_progress_printer(
                 if new_users is None
                 else safe_div(new_users, users)
             )
+            rolling_snapshots.append((users, new_leagues, new_users))
+            while rolling_snapshots and users - rolling_snapshots[0][0] > rolling_window_users:
+                rolling_snapshots.popleft()
+            rolling_baseline = rolling_snapshots[0]
+            rolling_users = users - rolling_baseline[0]
+            rolling_new_leagues_per_user = (
+                None
+                if rolling_users <= 0
+                else safe_div(new_leagues - rolling_baseline[1], rolling_users)
+            )
+            rolling_new_users_per_user = (
+                None
+                if rolling_users <= 0 or new_users is None or rolling_baseline[2] is None
+                else safe_div(new_users - rolling_baseline[2], rolling_users)
+            )
             if timing_collector is None:
                 leagues_history_count = (
                     f", leagues_history ~{estimated_rows} rows"
@@ -394,10 +412,12 @@ def discovery_progress_printer(
                     average_seconds_per_interval=average_seconds_per_interval,
                     leagues_seen=leagues_seen,
                     new_leagues=new_leagues,
+                    rolling_new_leagues_per_user=rolling_new_leagues_per_user,
                     new_users=new_users,
                     league_users=league_users,
                     queued_users=queued_users,
                     new_users_per_user=new_users_per_user,
+                    rolling_new_users_per_user=rolling_new_users_per_user,
                     estimated_rows=estimated_rows,
                     timing_collector=timing_collector,
                 )
@@ -413,10 +433,12 @@ def discovery_timing_table(
     average_seconds_per_interval: float | None,
     leagues_seen: int,
     new_leagues: int,
+    rolling_new_leagues_per_user: float | None,
     new_users: int | None,
     league_users: int,
     queued_users: int,
     new_users_per_user: float | None,
+    rolling_new_users_per_user: float | None,
     estimated_rows: int | None,
     timing_collector: DiscoveryTiming,
 ) -> Table:
@@ -444,12 +466,15 @@ def discovery_timing_table(
     table.add_row(
         "New leagues",
         str(new_leagues),
-        format_signed_rate(safe_div(new_leagues, users)),
+        format_rate_with_rolling(
+            safe_div(new_leagues, users),
+            rolling_new_leagues_per_user,
+        ),
     )
     table.add_row(
         "New users",
         "" if new_users is None else str(new_users),
-        format_new_user_rate(new_users_per_user),
+        format_rate_with_rolling(new_users_per_user, rolling_new_users_per_user),
     )
     if estimated_rows is not None:
         table.add_row("Unique leagues", str(estimated_rows), "")
@@ -512,6 +537,17 @@ def format_new_user_rate(value: float | None) -> str:
     if value is None:
         return ""
     return f"+{value:.2f}/user"
+
+
+def format_rate_with_rolling(cumulative: float | None, rolling: float | None) -> str:
+    """Format cumulative and rolling per-user rates for progress notes."""
+    cumulative_text = format_signed_rate(cumulative)
+    if rolling is None:
+        return cumulative_text
+    rolling_text = format_signed_rate(rolling)
+    if not cumulative_text:
+        return f"{rolling_text} last 1000"
+    return f"{cumulative_text}; {rolling_text} last 1000"
 
 
 def timing_share(seconds: float, total_seconds: float) -> str | None:
