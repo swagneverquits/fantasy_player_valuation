@@ -348,7 +348,7 @@ def discovery_progress_printer(
     if every <= 0:
         return None
     rolling_window_users = 1000
-    rolling_snapshots: deque[tuple[int, int, int | None]] = deque()
+    rolling_snapshots: deque[tuple[int, int, int | None]] = deque([(0, 0, 0)])
 
     def print_progress(
         users: int,
