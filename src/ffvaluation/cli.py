@@ -546,8 +546,8 @@ def format_rate_with_rolling(cumulative: float | None, rolling: float | None) ->
         return cumulative_text
     rolling_text = format_signed_rate(rolling)
     if not cumulative_text:
-        return f"{rolling_text} last 1000"
-    return f"{cumulative_text}; {rolling_text} last 1000"
+        return f"({rolling_text})"
+    return f"{cumulative_text} ({rolling_text})"
 
 
 def timing_share(seconds: float, total_seconds: float) -> str | None:
