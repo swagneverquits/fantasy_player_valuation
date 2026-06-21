@@ -373,3 +373,75 @@ $$
 That is enough to test the most important question:
 
 > Can real Sleeper trades recover a sensible value curve, especially at the elite consolidation end?
+
+## Appendix A. Valuing Package Deals
+
+The package-deal question is central:
+
+> How should the model think about Player A for Player B + Player C?
+
+The cleanest starting point is still linearity.
+
+$$
+V(P) = \sum_{i \in P} v_i
+$$
+
+Linearity is attractive because it makes every trade easy to score. Add up the assets on one side, add up the assets on the other side, and compare the totals.
+
+For a trade like:
+
+> Player A for Player B + Player C
+
+the model says:
+
+$$
+v_A \approx v_B + v_C
+$$
+
+That is mathematically convenient and probably the right baseline. It also makes model output easy to explain: every asset has one value, and package value is just the sum.
+
+The concern is that dynasty markets may not be fully linear. A manager often prefers one elite starter over two lesser starters, even if the two lesser players have the same summed public value.
+
+That means the observed market may behave more like:
+
+$$
+v_A \approx v_B + v_C - h(B, C)
+$$
+
+where $h(B, C)$ is a package discount.
+
+The discount should probably be zero in the first model. We only add it if the linear model repeatedly struggles with consolidation trades.
+
+Useful ways to think about optional package discounts:
+
+- **Rank discount:** the best asset keeps full value, and the second or third asset gets a learned haircut.
+- **Roster-spot discount:** each extra incoming asset has a fixed cost because it consumes a roster spot.
+- **Concentration discount:** packages with value spread across many assets are worth less than packages concentrated in one elite asset.
+- **Tier discount:** depth pieces below a certain lineup-value tier contribute less than their raw values.
+
+The most practical linear-plus-discount version is:
+
+$$
+V(P) = \sum_{i \in P} v_i - \rho \cdot \max(0, n(P) - 1)
+$$
+
+This keeps package value mostly additive, while giving the model one simple way to account for the cost of turning one roster slot into two or three.
+
+A more flexible version is:
+
+$$
+V(P) = v_{(1)} + d_2v_{(2)} + d_3v_{(3)}
+$$
+
+This is still easy to explain, but it is less linear: the value of an asset depends on whether it is the best, second-best, or third-best asset in the package.
+
+The modeling order should probably be:
+
+1. Fit pure linear values.
+2. Inspect errors on 1-for-2 and 1-for-3 trades.
+3. Add the smallest package discount that materially improves held-out fit.
+4. Keep the discount interpretable enough that a trade calculator can explain it.
+
+The guiding principle:
+
+> Prefer linear package values until the data proves that package shape matters.
