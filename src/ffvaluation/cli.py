@@ -347,7 +347,7 @@ def discovery_progress_printer(
     """Build a Sleeper discovery progress callback."""
     if every <= 0:
         return None
-    rolling_window_users = 1000
+    rolling_window_users = 5000
     rolling_snapshots: deque[tuple[int, int, int | None]] = deque([(0, 0, 0)])
 
     def print_progress(
