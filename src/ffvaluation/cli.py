@@ -20,10 +20,10 @@ from ffvaluation.sources.sleeper import (
     DiscoveryTiming,
     SleeperDiscoveryStore,
     expand_user_frontier_sqlite,
-    fetch_trade_history,
+    fetch_trade_sample,
+    sample_league_ids_from_discovery,
     seed_user_frontier,
-    upsert_trade_history_csv,
-    write_trade_history_csv,
+    upsert_trade_history_sqlite,
 )
 from ffvaluation.sources.registry import list_sources
 
@@ -144,28 +144,33 @@ def pull_rosteraudit_history(
     )
 
 
-@app.command("pull-sleeper-trades")
-def pull_sleeper_trades(
-    league_id: str = typer.Option(
-        ...,
-        "--league-id",
-        help="Sleeper league ID to use as the starting point.",
+@app.command("sample-sleeper-trades")
+def sample_sleeper_trades(
+    discovery_db_path: Path = typer.Option(
+        Path("data/raw/sleeper/discovery/discovery.sqlite"),
+        "--discovery-db-path",
+        help="Sleeper discovery SQLite database path.",
     ),
-    output: Path | None = typer.Option(
-        None,
+    output: Path = typer.Option(
+        Path("data/sample/sleeper/trades/sample.sqlite"),
         "--output",
         "-o",
-        help="Trade CSV output path. Defaults to data/raw/sleeper/trades/YYYYMMDD.csv.",
+        help="Sample trade SQLite output path.",
     ),
-    index_output: Path | None = typer.Option(
-        None,
-        "--index-output",
-        help="Upserted trade CSV path. Defaults to data/raw/sleeper/trades/history.csv.",
+    season: str = typer.Option(
+        "2025",
+        "--season",
+        help="Sleeper league season to sample.",
     ),
-    days: int = typer.Option(
-        365,
-        "--days",
-        help="Keep trades created within this many days.",
+    leagues: int = typer.Option(
+        100,
+        "--leagues",
+        help="Number of discovered leagues to sample.",
+    ),
+    target_only: bool = typer.Option(
+        True,
+        "--target-only/--any-format",
+        help="Sample only target-format leagues by default.",
     ),
     first_round: int = typer.Option(
         1,
@@ -177,43 +182,40 @@ def pull_sleeper_trades(
         "--last-round",
         help="Last Sleeper transaction round/week to fetch.",
     ),
-    follow_previous: bool = typer.Option(
-        True,
-        "--follow-previous/--no-follow-previous",
-        help="Follow previous_league_id links for older seasons.",
-    ),
-    max_leagues: int | None = typer.Option(
-        2,
-        "--max-leagues",
-        help="Limit followed league seasons. Defaults to current plus one previous season.",
-    ),
     sleep_seconds: float = typer.Option(
         0.1,
         "--sleep-seconds",
         help="Delay between Sleeper transaction calls.",
     ),
+    progress_every: int = typer.Option(
+        10,
+        "--progress-every",
+        help="Print progress every N sampled leagues. Use 0 to disable.",
+    ),
 ) -> None:
-    """Pull completed Sleeper trades for a league history."""
+    """Sample completed Sleeper trades from discovered leagues into SQLite."""
 
-    captured_at = datetime.now(UTC)
-    output = output or Path(f"data/raw/sleeper/trades/{captured_at:%Y%m%d}.csv")
-    index_output = index_output or Path("data/raw/sleeper/trades/history.csv")
-    rows = fetch_trade_history(
-        league_id=league_id,
-        days=days,
-        rounds=range(first_round, last_round + 1),
-        follow_previous=follow_previous,
-        max_leagues=max_leagues,
-        captured_at=captured_at,
-        sleep_seconds=sleep_seconds,
+    league_ids = sample_league_ids_from_discovery(
+        discovery_db_path=discovery_db_path,
+        season=season,
+        limit=leagues,
+        target_only=target_only,
     )
-    write_trade_history_csv(rows, output)
-    upsert_trade_history_csv(rows, index_output)
+    if not league_ids:
+        raise typer.BadParameter(f"No sampled leagues found in {discovery_db_path}.")
 
-    target_format_rows = sum(1 for row in rows if row.target_format_guess)
+    rows = fetch_trade_sample(
+        league_ids=league_ids,
+        season=season,
+        rounds=range(first_round, last_round + 1),
+        sleep_seconds=sleep_seconds,
+        progress_callback=trade_sample_progress_printer(progress_every),
+    )
+    upsert_trade_history_sqlite(rows, output)
+
     console.print(
-        f"Wrote {len(rows)} Sleeper trades to {output} and upserted {index_output} "
-        f"({target_format_rows} target-format guesses)"
+        f"Sampled {len(league_ids)} {season} Sleeper leagues, "
+        f"wrote {len(rows)} completed trades to {output}"
     )
 
 
@@ -590,5 +592,21 @@ def progress_printer(every: int):
         """Print periodic current-total progress."""
         if current == 1 or current % every == 0 or current == total:
             console.print(f"RosterAudit history: {current}/{total} {status}")
+
+    return print_progress
+
+
+def trade_sample_progress_printer(every: int):
+    """Build a periodic Sleeper trade sample progress callback."""
+    if every <= 0:
+        return None
+
+    def print_progress(current: int, total: int, trades: int, league_id: str) -> None:
+        """Print sampled trade ingestion progress."""
+        if current == 1 or current % every == 0 or current == total:
+            console.print(
+                f"Sleeper trade sample: {current}/{total} leagues, "
+                f"{trades} trades, latest league {league_id}"
+            )
 
     return print_progress

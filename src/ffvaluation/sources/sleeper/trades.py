@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import csv
+import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ from ffvaluation.sources.sleeper.models import TRADE_HISTORY_COLUMNS, SleeperTra
 def fetch_trade_history(
     *,
     league_id: str,
-    days: int = 365,
+    days: int | None = 365,
     rounds: Iterable[int] = range(1, 19),
     follow_previous: bool = True,
     max_leagues: int | None = None,
@@ -37,7 +38,7 @@ def fetch_trade_history(
 ) -> list[SleeperTradeRow]:
     """Fetch completed Sleeper trades across a league chain."""
     captured_at = captured_at or datetime.now(UTC)
-    since = captured_at - timedelta(days=days)
+    since = None if days is None else captured_at - timedelta(days=days)
     fetch_json = fetch_json or default_fetch_json
     rows: list[SleeperTradeRow] = []
 
@@ -56,7 +57,7 @@ def fetch_trade_history(
                 created_at = millis_to_datetime(transaction.get("created"))
                 status_updated_at = millis_to_datetime(transaction.get("status_updated"))
                 trade_time = created_at or status_updated_at
-                if trade_time is not None and trade_time < since:
+                if since is not None and trade_time is not None and trade_time < since:
                     continue
 
                 rows.append(
@@ -73,6 +74,92 @@ def fetch_trade_history(
 
     rows.sort(key=lambda row: (row.created_at or datetime.min.replace(tzinfo=UTC), row.league_id))
     return rows
+
+
+def sample_league_ids_from_discovery(
+    *,
+    discovery_db_path: str | Path,
+    season: str,
+    limit: int,
+    target_only: bool = True,
+) -> list[str]:
+    """Sample discovered Sleeper league IDs from the discovery SQLite database."""
+    where_sql = "league_season = ?"
+    parameters: list[str | int] = [season]
+    if target_only:
+        where_sql += " AND target_format_guess = 1"
+    with sqlite3.connect(discovery_db_path) as connection:
+        return [
+            str(row[0])
+            for row in connection.execute(
+                "SELECT league_id FROM leagues "
+                f"WHERE {where_sql} "
+                "ORDER BY random() "
+                "LIMIT ?",
+                (*parameters, limit),
+            )
+        ]
+
+
+def fetch_trade_sample(
+    *,
+    league_ids: Iterable[str],
+    season: str,
+    captured_at: datetime | None = None,
+    rounds: Iterable[int] = range(1, 19),
+    sleep_seconds: float = 0.1,
+    fetch_json: FetchJson | None = None,
+    progress_callback: Callable[[int, int, int, str], None] | None = None,
+) -> list[SleeperTradeRow]:
+    """Fetch completed trades for a set of sampled leagues in one season."""
+    league_ids = list(league_ids)
+    total = len(league_ids)
+    captured_at = captured_at or datetime.now(UTC)
+    rows: list[SleeperTradeRow] = []
+    for index, league_id in enumerate(league_ids, start=1):
+        league_rows = fetch_trade_history(
+            league_id=league_id,
+            days=None,
+            rounds=rounds,
+            follow_previous=False,
+            max_leagues=1,
+            captured_at=captured_at,
+            sleep_seconds=sleep_seconds,
+            fetch_json=fetch_json,
+        )
+        league_rows = [row for row in league_rows if row.league_season == season]
+        rows.extend(league_rows)
+        if progress_callback is not None:
+            progress_callback(index, total, len(rows), league_id)
+    return rows
+
+
+def upsert_trade_history_sqlite(rows: list[SleeperTradeRow], path: str | Path) -> Path:
+    """Upsert Sleeper trade rows into a SQLite sample database."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    columns = TRADE_HISTORY_COLUMNS
+    column_sql = ", ".join(f"{column} TEXT" for column in columns)
+    placeholders = ", ".join("?" for _ in columns)
+    update_columns = [column for column in columns if column not in {"league_id", "transaction_id"}]
+    update_sql = ", ".join(f"{column}=excluded.{column}" for column in update_columns)
+    sql = (
+        f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders}) "
+        "ON CONFLICT(league_id, transaction_id) DO UPDATE SET "
+        f"{update_sql}"
+    )
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS trades "
+            f"({column_sql}, PRIMARY KEY (league_id, transaction_id))"
+        )
+        connection.executemany(
+            sql,
+            [tuple(format_trade_row(row)[column] for column in columns) for row in rows],
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_trades_league ON trades(league_id)")
+    return path
 
 
 def write_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Path:

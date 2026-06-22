@@ -11,4 +11,5 @@ build/
 data/raw/
 data/processed/
 data/reports/
+data/sample/
 data/scratch/
