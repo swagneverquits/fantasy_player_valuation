@@ -20,8 +20,10 @@ from ffvaluation.sources.sleeper import (
     DiscoveryTiming,
     SleeperDiscoveryStore,
     copy_trade_sample_leagues_sqlite,
+    copy_trade_sample_players_sqlite,
     expand_user_frontier_sqlite,
     fetch_trade_sample,
+    pull_nfl_players_sqlite,
     sample_league_ids_from_discovery,
     seed_user_frontier,
     upsert_trade_history_sqlite,
@@ -158,6 +160,11 @@ def sample_sleeper_trades(
         "-o",
         help="Sample trade SQLite output path.",
     ),
+    players_db_path: Path = typer.Option(
+        Path("data/raw/sleeper/players/players.sqlite"),
+        "--players-db-path",
+        help="Raw Sleeper player catalog SQLite path.",
+    ),
     season: str = typer.Option(
         "2025",
         "--season",
@@ -193,6 +200,11 @@ def sample_sleeper_trades(
         "--progress-every",
         help="Print progress every N sampled leagues. Use 0 to disable.",
     ),
+    include_players: bool = typer.Option(
+        True,
+        "--include-players/--no-players",
+        help="Copy player lookup rows for trade add/drop IDs into the sample database.",
+    ),
 ) -> None:
     """Sample completed Sleeper trades from discovered leagues into SQLite."""
 
@@ -218,11 +230,34 @@ def sample_sleeper_trades(
         sample_db_path=output,
         league_ids=league_ids,
     )
+    player_count = (
+        copy_trade_sample_players_sqlite(
+            sample_db_path=output,
+            players_db_path=players_db_path,
+        )
+        if include_players
+        else 0
+    )
 
     console.print(
         f"Sampled {len(league_ids)} {season} Sleeper leagues, "
-        f"wrote {len(rows)} completed trades to {output}"
+        f"wrote {len(rows)} completed trades and {player_count} players to {output}"
     )
+
+
+@app.command("pull-sleeper-players")
+def pull_sleeper_players(
+    output: Path = typer.Option(
+        Path("data/raw/sleeper/players/players.sqlite"),
+        "--output",
+        "-o",
+        help="Raw Sleeper player catalog SQLite output path.",
+    ),
+) -> None:
+    """Pull the Sleeper NFL player catalog into SQLite."""
+
+    player_count = pull_nfl_players_sqlite(path=output)
+    console.print(f"Upserted {player_count} Sleeper NFL players into {output}")
 
 
 @app.command("seed-sleeper-network")

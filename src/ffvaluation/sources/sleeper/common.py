@@ -49,6 +49,11 @@ def transactions_url(league_id: str, round_number: int) -> str:
     return f"{BASE_URL}/league/{league_id}/transactions/{round_number}"
 
 
+def players_url() -> str:
+    """Build the Sleeper NFL players URL."""
+    return f"{BASE_URL}/players/nfl"
+
+
 def fetch_json(
     url: str,
     *,

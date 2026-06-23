@@ -16,6 +16,11 @@ from ffvaluation.sources.sleeper.models import (
     SleeperTradeRow,
     SleeperUserRow,
 )
+from ffvaluation.sources.sleeper.players import (
+    copy_trade_sample_players_sqlite,
+    fetch_nfl_players,
+    pull_nfl_players_sqlite,
+)
 from ffvaluation.sources.sleeper.trades import (
     copy_trade_sample_leagues_sqlite,
     fetch_trade_history,
@@ -39,8 +44,11 @@ __all__ = [
     "SleeperUserRow",
     "expand_user_frontier_sqlite",
     "copy_trade_sample_leagues_sqlite",
+    "copy_trade_sample_players_sqlite",
     "fetch_trade_history",
     "fetch_trade_sample",
+    "fetch_nfl_players",
+    "pull_nfl_players_sqlite",
     "sample_league_ids_from_discovery",
     "seed_user_frontier",
     "upsert_trade_history_csv",
