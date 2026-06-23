@@ -31,18 +31,13 @@ TRADE_SIDE_COLUMNS = [
     "league_id",
     "transaction_id",
     "side_roster_id",
-    "created_at",
-    "season",
-    "round",
-    "trade_team_count",
-    "is_multiteam",
+    "completed_date",
     "player_ids_in_json",
     "player_ids_out_json",
     "picks_in_json",
     "picks_out_json",
     "faab_in",
     "faab_out",
-    "processed_at",
 ]
 
 
@@ -229,11 +224,8 @@ def sqlite_table_columns(connection: sqlite3.Connection, table: str) -> list[str
 
 def trade_sides_from_sqlite(
     path: str | Path,
-    *,
-    processed_at: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Build one roster-perspective side row per completed Sleeper trade participant."""
-    processed_at = processed_at or datetime.now(UTC)
     with sqlite3.connect(path) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
@@ -241,24 +233,21 @@ def trade_sides_from_sqlite(
             SELECT
                 t.league_id,
                 t.transaction_id,
-                t.created_at,
-                t.round,
+                t.status_updated_at,
                 t.roster_ids,
                 t.consenter_ids,
                 t.adds,
                 t.drops,
                 t.draft_picks,
-                t.waiver_budget,
-                l.league_season
+                t.waiver_budget
             FROM trades t
-            LEFT JOIN leagues l ON l.league_id = t.league_id
-            ORDER BY t.created_at, t.league_id, t.transaction_id
+            ORDER BY t.status_updated_at, t.league_id, t.transaction_id
             """
         ).fetchall()
 
     side_rows: list[dict[str, Any]] = []
     for row in rows:
-        side_rows.extend(trade_side_rows(row, processed_at=processed_at))
+        side_rows.extend(trade_side_rows(row))
     return side_rows
 
 
@@ -269,7 +258,7 @@ def trade_sides_dataframe(path: str | Path):
     return pd.DataFrame(trade_sides_from_sqlite(path), columns=TRADE_SIDE_COLUMNS)
 
 
-def trade_side_rows(row: sqlite3.Row, *, processed_at: datetime) -> list[dict[str, Any]]:
+def trade_side_rows(row: sqlite3.Row) -> list[dict[str, Any]]:
     """Build side rows for one raw trade row."""
     side_roster_ids = sorted(
         {
@@ -278,7 +267,6 @@ def trade_side_rows(row: sqlite3.Row, *, processed_at: datetime) -> list[dict[st
             or parse_json_value(row["roster_ids"], [])
         }
     )
-    trade_team_count = len(side_roster_ids)
     adds = parse_json_value(row["adds"], {}) or {}
     drops = parse_json_value(row["drops"], {}) or {}
     draft_picks = parse_json_value(row["draft_picks"], []) or []
@@ -289,11 +277,7 @@ def trade_side_rows(row: sqlite3.Row, *, processed_at: datetime) -> list[dict[st
             "league_id": row["league_id"],
             "transaction_id": row["transaction_id"],
             "side_roster_id": side_roster_id,
-            "created_at": row["created_at"],
-            "season": row["league_season"],
-            "round": row["round"],
-            "trade_team_count": trade_team_count,
-            "is_multiteam": trade_team_count > 2,
+            "completed_date": completed_date(row["status_updated_at"]),
             "player_ids_in_json": dumps_json(player_ids_for_roster(adds, side_roster_id)),
             "player_ids_out_json": dumps_json(player_ids_for_roster(drops, side_roster_id)),
             "picks_in_json": dumps_json(pick_tokens_for_roster(draft_picks, "owner_id", side_roster_id)),
@@ -302,10 +286,14 @@ def trade_side_rows(row: sqlite3.Row, *, processed_at: datetime) -> list[dict[st
             ),
             "faab_in": faab_total_for_roster(waiver_budget, "receiver", side_roster_id),
             "faab_out": faab_total_for_roster(waiver_budget, "sender", side_roster_id),
-            "processed_at": processed_at.isoformat(),
         }
         for side_roster_id in side_roster_ids
     ]
+
+
+def completed_date(value: str | None) -> str:
+    """Return the completed date portion of a Sleeper status-updated timestamp."""
+    return "" if not value else value[:10]
 
 
 def parse_json_value(value: str | None, fallback: Any) -> Any:

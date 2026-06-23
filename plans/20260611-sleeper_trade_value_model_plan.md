@@ -171,6 +171,8 @@ This plan frames a research path for constructing player value scores directly f
 >
 > Package representation should preserve asymmetry. A 1-for-3 trade is not just four asset rows; the model needs to know which side consolidated and which side diversified.
 >
+> The working data path should be raw-first and SQLite-native: scrape 2025 completed trades into a raw transaction table, transform those rows into a processed trade-side table, and run analysis from the processed table rather than from ad hoc notebooks or CSV extracts.
+>
 > </details>
 
 </details>
@@ -422,6 +424,17 @@ This plan frames a research path for constructing player value scores directly f
 - Pull with <code>ffvaluation pull-sleeper-trades --league-id &lt;league_id&gt;</code>; by default it follows <code>previous_league_id</code> and keeps completed trades from the past 365 days.
 - Store intermediate model datasets under <code>data/processed/sleeper/trade_value_model/</code>.
 - Store exploratory probes under <code>data/scratch/sleeper/</code>.
+
+</details>
+
+<details>
+<summary><strong>Target SQLite Flow</strong></summary>
+
+- Scrape 2025 completed Sleeper trades for target-format leagues.
+- Store untouched transaction payloads in a raw SQLite table.
+- Process raw transactions into a narrow trade-side SQLite table keyed by league, transaction, and roster side.
+- Keep processed trade sides focused on completed date, assets in/out, and FAAB in/out.
+- Run notebooks and model experiments from the processed SQLite table.
 
 </details>
 
