@@ -6,13 +6,13 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ffvaluation.sources.sleeper.common import dumps_json
-from ffvaluation.sources.sleeper.discovery import discovery_sqlite_type
-from ffvaluation.sources.sleeper.load.sqlite import sqlite_table_columns
+from ffvaluation.sources.sleeper.fetch.discovery import discovery_sqlite_type
 from ffvaluation.sources.sleeper.models import (
     LEAGUE_DISCOVERY_COLUMNS,
     TRADE_HISTORY_COLUMNS,
     SleeperTradeRow,
 )
+from ffvaluation.sources.sleeper.save.sqlite import sqlite_table_columns
 
 
 def upsert_trade_history_sqlite(rows: list[SleeperTradeRow], path: str | Path) -> Path:

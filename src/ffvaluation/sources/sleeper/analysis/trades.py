@@ -22,6 +22,31 @@ TRADE_SIDE_COLUMNS = [
 ]
 
 
+def sample_league_ids_from_discovery(
+    *,
+    discovery_db_path: str | Path,
+    season: str,
+    limit: int,
+    target_only: bool = True,
+) -> list[str]:
+    """Sample discovered Sleeper league IDs from the discovery SQLite database."""
+    where_sql = "league_season = ?"
+    parameters: list[str | int] = [season]
+    if target_only:
+        where_sql += " AND target_format_guess = 1"
+    with sqlite3.connect(discovery_db_path) as connection:
+        return [
+            str(row[0])
+            for row in connection.execute(
+                "SELECT league_id FROM leagues "
+                f"WHERE {where_sql} "
+                "ORDER BY random() "
+                "LIMIT ?",
+                (*parameters, limit),
+            )
+        ]
+
+
 def trade_sides_from_sqlite(path: str | Path) -> list[dict[str, Any]]:
     """Build one roster-perspective side row per completed Sleeper trade participant."""
     with sqlite3.connect(path) as connection:
