@@ -19,6 +19,7 @@ from ffvaluation.sources.rosteraudit import (
 from ffvaluation.sources.sleeper import (
     DiscoveryTiming,
     SleeperDiscoveryStore,
+    copy_trade_sample_leagues_sqlite,
     expand_user_frontier_sqlite,
     fetch_trade_sample,
     sample_league_ids_from_discovery,
@@ -212,6 +213,11 @@ def sample_sleeper_trades(
         progress_callback=trade_sample_progress_printer(progress_every),
     )
     upsert_trade_history_sqlite(rows, output)
+    copy_trade_sample_leagues_sqlite(
+        discovery_db_path=discovery_db_path,
+        sample_db_path=output,
+        league_ids=league_ids,
+    )
 
     console.print(
         f"Sampled {len(league_ids)} {season} Sleeper leagues, "

@@ -15,14 +15,15 @@ from ffvaluation.sources.sleeper.common import (
     is_dynasty,
     league_url,
     millis_to_datetime,
-    optional_bool,
     optional_float,
     optional_int,
     optional_str,
     te_premium,
     transactions_url,
 )
+from ffvaluation.sources.sleeper.discovery import discovery_sqlite_type
 from ffvaluation.sources.sleeper.models import TRADE_HISTORY_COLUMNS, SleeperTradeRow
+from ffvaluation.sources.sleeper.models import LEAGUE_DISCOVERY_COLUMNS
 
 
 def fetch_trade_history(
@@ -149,6 +150,8 @@ def upsert_trade_history_sqlite(rows: list[SleeperTradeRow], path: str | Path) -
         f"{update_sql}"
     )
     with sqlite3.connect(path) as connection:
+        if sqlite_table_columns(connection, "trades") not in ([], columns):
+            connection.execute("DROP TABLE trades")
         connection.execute(
             "CREATE TABLE IF NOT EXISTS trades "
             f"({column_sql}, PRIMARY KEY (league_id, transaction_id))"
@@ -160,6 +163,48 @@ def upsert_trade_history_sqlite(rows: list[SleeperTradeRow], path: str | Path) -
         connection.execute("CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_trades_league ON trades(league_id)")
     return path
+
+
+def copy_trade_sample_leagues_sqlite(
+    *,
+    discovery_db_path: str | Path,
+    sample_db_path: str | Path,
+    league_ids: Iterable[str],
+) -> Path:
+    """Copy sampled league rows from discovery SQLite into the trade sample database."""
+    sample_db_path = Path(sample_db_path)
+    sample_db_path.parent.mkdir(parents=True, exist_ok=True)
+    league_ids = sorted({str(league_id) for league_id in league_ids})
+    if not league_ids:
+        return sample_db_path
+
+    column_sql = ", ".join(
+        f"{column} {discovery_sqlite_type(column)}" for column in LEAGUE_DISCOVERY_COLUMNS
+    )
+    placeholders = ", ".join("?" for _ in league_ids)
+    with sqlite3.connect(sample_db_path) as connection:
+        if sqlite_table_columns(connection, "leagues") not in ([], LEAGUE_DISCOVERY_COLUMNS):
+            connection.execute("DROP TABLE leagues")
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS leagues "
+            f"({column_sql}, PRIMARY KEY (league_id)) WITHOUT ROWID"
+        )
+        connection.execute("ATTACH DATABASE ? AS discovery", (str(discovery_db_path),))
+        connection.execute(
+            f"INSERT OR REPLACE INTO leagues ({', '.join(LEAGUE_DISCOVERY_COLUMNS)}) "
+            f"SELECT {', '.join(LEAGUE_DISCOVERY_COLUMNS)} "
+            "FROM discovery.leagues "
+            f"WHERE league_id IN ({placeholders})",
+            league_ids,
+        )
+        connection.commit()
+        connection.execute("DETACH DATABASE discovery")
+    return sample_db_path
+
+
+def sqlite_table_columns(connection: sqlite3.Connection, table: str) -> list[str]:
+    """Read column names for an existing SQLite table."""
+    return [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
 
 
 def write_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Path:
@@ -300,9 +345,6 @@ def format_trade_row(row: SleeperTradeRow) -> dict[str, str]:
     return {
         "captured_at": row.captured_at.isoformat(),
         "league_id": row.league_id,
-        "league_name": row.league_name,
-        "league_season": row.league_season,
-        "previous_league_id": row.previous_league_id or "",
         "round": str(row.round),
         "transaction_id": row.transaction_id,
         "status": row.status,
@@ -318,13 +360,4 @@ def format_trade_row(row: SleeperTradeRow) -> dict[str, str]:
         "drops": dumps_json(row.drops),
         "draft_picks": dumps_json(row.draft_picks),
         "waiver_budget": dumps_json(row.waiver_budget),
-        "total_rosters": "" if row.total_rosters is None else str(row.total_rosters),
-        "is_dynasty": optional_bool(row.is_dynasty),
-        "is_superflex": str(row.is_superflex).lower(),
-        "ppr": "" if row.ppr is None else f"{row.ppr:g}",
-        "te_premium": f"{row.te_premium:g}",
-        "target_format_guess": str(row.target_format_guess).lower(),
-        "league_settings": dumps_json(row.league_settings),
-        "scoring_settings": dumps_json(row.scoring_settings),
-        "roster_positions": dumps_json(row.roster_positions),
     }

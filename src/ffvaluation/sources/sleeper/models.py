@@ -8,9 +8,6 @@ from typing import Any
 TRADE_HISTORY_COLUMNS = [
     "captured_at",
     "league_id",
-    "league_name",
-    "league_season",
-    "previous_league_id",
     "round",
     "transaction_id",
     "status",
@@ -24,15 +21,6 @@ TRADE_HISTORY_COLUMNS = [
     "drops",
     "draft_picks",
     "waiver_budget",
-    "total_rosters",
-    "is_dynasty",
-    "is_superflex",
-    "ppr",
-    "te_premium",
-    "target_format_guess",
-    "league_settings",
-    "scoring_settings",
-    "roster_positions",
 ]
 USER_DISCOVERY_COLUMNS = [
     "captured_date",
