@@ -15,6 +15,7 @@ from ffvaluation.sources.sleeper.common import (
     optional_str,
     players_url,
 )
+from ffvaluation.sources.sleeper.load.sqlite import sqlite_table_columns
 
 
 PLAYER_COLUMNS = [
@@ -149,11 +150,6 @@ def create_players_table(connection: sqlite3.Connection) -> None:
         f"({column_sql}, PRIMARY KEY (player_id)) WITHOUT ROWID"
     )
     connection.execute("CREATE INDEX IF NOT EXISTS idx_players_name ON players(full_name)")
-
-
-def sqlite_table_columns(connection: sqlite3.Connection, table: str) -> list[str]:
-    """Read column names for an existing SQLite table."""
-    return [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
 
 
 def player_sqlite_type(column: str) -> str:

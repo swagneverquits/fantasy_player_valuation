@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import csv
-import json
 import sqlite3
 import time
 from collections.abc import Callable, Iterable
@@ -11,7 +9,6 @@ from typing import Any
 
 from ffvaluation.sources.sleeper.common import (
     FetchJson,
-    dumps_json,
     fetch_json as default_fetch_json,
     is_dynasty,
     league_url,
@@ -22,22 +19,33 @@ from ffvaluation.sources.sleeper.common import (
     te_premium,
     transactions_url,
 )
-from ffvaluation.sources.sleeper.discovery import discovery_sqlite_type
-from ffvaluation.sources.sleeper.models import TRADE_HISTORY_COLUMNS, SleeperTradeRow
-from ffvaluation.sources.sleeper.models import LEAGUE_DISCOVERY_COLUMNS
+from ffvaluation.sources.sleeper.analysis.trades import (
+    TRADE_SIDE_COLUMNS,
+    trade_sides_dataframe,
+    trade_sides_from_sqlite,
+)
+from ffvaluation.sources.sleeper.load.trades import (
+    copy_trade_sample_leagues_sqlite,
+    format_trade_row,
+    upsert_trade_history_csv,
+    upsert_trade_history_sqlite,
+    write_trade_history_csv,
+)
+from ffvaluation.sources.sleeper.models import SleeperTradeRow
 
 
-TRADE_SIDE_COLUMNS = [
-    "league_id",
-    "transaction_id",
-    "side_roster_id",
-    "completed_date",
-    "player_ids_in_json",
-    "player_ids_out_json",
-    "picks_in_json",
-    "picks_out_json",
-    "faab_in",
-    "faab_out",
+__all__ = [
+    "TRADE_SIDE_COLUMNS",
+    "copy_trade_sample_leagues_sqlite",
+    "fetch_trade_history",
+    "fetch_trade_sample",
+    "format_trade_row",
+    "sample_league_ids_from_discovery",
+    "trade_sides_dataframe",
+    "trade_sides_from_sqlite",
+    "upsert_trade_history_csv",
+    "upsert_trade_history_sqlite",
+    "write_trade_history_csv",
 ]
 
 
@@ -150,251 +158,6 @@ def fetch_trade_sample(
     return rows
 
 
-def upsert_trade_history_sqlite(rows: list[SleeperTradeRow], path: str | Path) -> Path:
-    """Upsert Sleeper trade rows into a SQLite sample database."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    columns = TRADE_HISTORY_COLUMNS
-    column_sql = ", ".join(f"{column} TEXT" for column in columns)
-    placeholders = ", ".join("?" for _ in columns)
-    update_columns = [column for column in columns if column not in {"league_id", "transaction_id"}]
-    update_sql = ", ".join(f"{column}=excluded.{column}" for column in update_columns)
-    sql = (
-        f"INSERT INTO trades ({', '.join(columns)}) VALUES ({placeholders}) "
-        "ON CONFLICT(league_id, transaction_id) DO UPDATE SET "
-        f"{update_sql}"
-    )
-    with sqlite3.connect(path) as connection:
-        if sqlite_table_columns(connection, "trades") not in ([], columns):
-            connection.execute("DROP TABLE trades")
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS trades "
-            f"({column_sql}, PRIMARY KEY (league_id, transaction_id))"
-        )
-        connection.executemany(
-            sql,
-            [tuple(format_trade_row(row)[column] for column in columns) for row in rows],
-        )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_trades_league ON trades(league_id)")
-    return path
-
-
-def copy_trade_sample_leagues_sqlite(
-    *,
-    discovery_db_path: str | Path,
-    sample_db_path: str | Path,
-    league_ids: Iterable[str],
-) -> Path:
-    """Copy sampled league rows from discovery SQLite into the trade sample database."""
-    sample_db_path = Path(sample_db_path)
-    sample_db_path.parent.mkdir(parents=True, exist_ok=True)
-    league_ids = sorted({str(league_id) for league_id in league_ids})
-    if not league_ids:
-        return sample_db_path
-
-    column_sql = ", ".join(
-        f"{column} {discovery_sqlite_type(column)}" for column in LEAGUE_DISCOVERY_COLUMNS
-    )
-    placeholders = ", ".join("?" for _ in league_ids)
-    with sqlite3.connect(sample_db_path) as connection:
-        if sqlite_table_columns(connection, "leagues") not in ([], LEAGUE_DISCOVERY_COLUMNS):
-            connection.execute("DROP TABLE leagues")
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS leagues "
-            f"({column_sql}, PRIMARY KEY (league_id)) WITHOUT ROWID"
-        )
-        connection.execute("ATTACH DATABASE ? AS discovery", (str(discovery_db_path),))
-        connection.execute(
-            f"INSERT OR REPLACE INTO leagues ({', '.join(LEAGUE_DISCOVERY_COLUMNS)}) "
-            f"SELECT {', '.join(LEAGUE_DISCOVERY_COLUMNS)} "
-            "FROM discovery.leagues "
-            f"WHERE league_id IN ({placeholders})",
-            league_ids,
-        )
-        connection.commit()
-        connection.execute("DETACH DATABASE discovery")
-    return sample_db_path
-
-
-def sqlite_table_columns(connection: sqlite3.Connection, table: str) -> list[str]:
-    """Read column names for an existing SQLite table."""
-    return [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
-
-
-def trade_sides_from_sqlite(
-    path: str | Path,
-) -> list[dict[str, Any]]:
-    """Build one roster-perspective side row per completed Sleeper trade participant."""
-    with sqlite3.connect(path) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            """
-            SELECT
-                t.league_id,
-                t.transaction_id,
-                t.status_updated_at,
-                t.roster_ids,
-                t.consenter_ids,
-                t.adds,
-                t.drops,
-                t.draft_picks,
-                t.waiver_budget
-            FROM trades t
-            ORDER BY t.status_updated_at, t.league_id, t.transaction_id
-            """
-        ).fetchall()
-
-    side_rows: list[dict[str, Any]] = []
-    for row in rows:
-        side_rows.extend(trade_side_rows(row))
-    return side_rows
-
-
-def trade_sides_dataframe(path: str | Path):
-    """Build a pandas DataFrame of roster-perspective trade side rows."""
-    import pandas as pd
-
-    return pd.DataFrame(trade_sides_from_sqlite(path), columns=TRADE_SIDE_COLUMNS)
-
-
-def trade_side_rows(row: sqlite3.Row) -> list[dict[str, Any]]:
-    """Build side rows for one raw trade row."""
-    side_roster_ids = sorted(
-        {
-            int(roster_id)
-            for roster_id in parse_json_value(row["consenter_ids"], [])
-            or parse_json_value(row["roster_ids"], [])
-        }
-    )
-    adds = parse_json_value(row["adds"], {}) or {}
-    drops = parse_json_value(row["drops"], {}) or {}
-    draft_picks = parse_json_value(row["draft_picks"], []) or []
-    waiver_budget = parse_json_value(row["waiver_budget"], []) or []
-
-    return [
-        {
-            "league_id": row["league_id"],
-            "transaction_id": row["transaction_id"],
-            "side_roster_id": side_roster_id,
-            "completed_date": completed_date(row["status_updated_at"]),
-            "player_ids_in_json": dumps_json(player_ids_for_roster(adds, side_roster_id)),
-            "player_ids_out_json": dumps_json(player_ids_for_roster(drops, side_roster_id)),
-            "picks_in_json": dumps_json(pick_tokens_for_roster(draft_picks, "owner_id", side_roster_id)),
-            "picks_out_json": dumps_json(
-                pick_tokens_for_roster(draft_picks, "previous_owner_id", side_roster_id)
-            ),
-            "faab_in": faab_total_for_roster(waiver_budget, "receiver", side_roster_id),
-            "faab_out": faab_total_for_roster(waiver_budget, "sender", side_roster_id),
-        }
-        for side_roster_id in side_roster_ids
-    ]
-
-
-def completed_date(value: str | None) -> str:
-    """Return the completed date portion of a Sleeper status-updated timestamp."""
-    return "" if not value else value[:10]
-
-
-def parse_json_value(value: str | None, fallback: Any) -> Any:
-    """Parse a JSON SQLite value while returning a fallback for blanks/nulls."""
-    if not value:
-        return fallback
-    parsed = json.loads(value)
-    return fallback if parsed is None else parsed
-
-
-def player_ids_for_roster(player_map: dict[str, Any], roster_id: int) -> list[str]:
-    """Return player IDs whose trade payload value matches a roster ID."""
-    return sorted(
-        str(player_id)
-        for player_id, mapped_roster_id in player_map.items()
-        if optional_int(mapped_roster_id) == roster_id
-    )
-
-
-def pick_tokens_for_roster(
-    draft_picks: list[dict[str, Any]],
-    roster_field: str,
-    roster_id: int,
-) -> list[str]:
-    """Return compact pick tokens for picks matching a roster field."""
-    return sorted(
-        pick_token(pick)
-        for pick in draft_picks
-        if optional_int(pick.get(roster_field)) == roster_id
-    )
-
-
-def pick_token(pick: dict[str, Any]) -> str:
-    """Format a draft pick as a compact sortable token."""
-    return f"{pick['season']}-{optional_int(pick['round']):02d}"
-
-
-def faab_total_for_roster(
-    waiver_budget: list[dict[str, Any]],
-    roster_field: str,
-    roster_id: int,
-) -> int:
-    """Sum FAAB amount entries matching a roster field."""
-    return sum(
-        optional_int(entry.get("amount")) or 0
-        for entry in waiver_budget
-        if optional_int(entry.get(roster_field)) == roster_id
-    )
-
-
-def write_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Path:
-    """Write Sleeper trade rows to a CSV file."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=TRADE_HISTORY_COLUMNS)
-        writer.writeheader()
-        writer.writerows(format_trade_row(row) for row in rows)
-
-    return path
-
-
-def upsert_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Path:
-    """Upsert Sleeper trade rows into the trade-history CSV."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    merged_rows: dict[str, dict[str, str]] = {}
-
-    if path.exists():
-        with path.open(newline="", encoding="utf-8") as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                transaction_id = row.get("transaction_id", "")
-                if transaction_id:
-                    merged_rows[transaction_id] = {
-                        field: row.get(field, "") for field in TRADE_HISTORY_COLUMNS
-                    }
-
-    for row in rows:
-        formatted = format_trade_row(row)
-        merged_rows[formatted["transaction_id"]] = formatted
-
-    with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=TRADE_HISTORY_COLUMNS)
-        writer.writeheader()
-        writer.writerows(
-            row
-            for _transaction_id, row in sorted(
-                merged_rows.items(),
-                key=lambda item: (
-                    item[1]["created_at"],
-                    item[1]["league_id"],
-                    item[1]["transaction_id"],
-                ),
-            )
-        )
-
-    return path
-
-
 def iter_league_chain(
     *,
     league_id: str,
@@ -475,26 +238,3 @@ def trade_row(
         scoring_settings=scoring_settings,
         roster_positions=roster_positions,
     )
-
-
-def format_trade_row(row: SleeperTradeRow) -> dict[str, str]:
-    """Format a Sleeper trade row for CSV output."""
-    return {
-        "captured_at": row.captured_at.isoformat(),
-        "league_id": row.league_id,
-        "round": str(row.round),
-        "transaction_id": row.transaction_id,
-        "status": row.status,
-        "created": "" if row.created is None else str(row.created),
-        "created_at": "" if row.created_at is None else row.created_at.isoformat(),
-        "status_updated": "" if row.status_updated is None else str(row.status_updated),
-        "status_updated_at": ""
-        if row.status_updated_at is None
-        else row.status_updated_at.isoformat(),
-        "roster_ids": dumps_json(row.roster_ids),
-        "consenter_ids": dumps_json(row.consenter_ids),
-        "adds": dumps_json(row.adds),
-        "drops": dumps_json(row.drops),
-        "draft_picks": dumps_json(row.draft_picks),
-        "waiver_budget": dumps_json(row.waiver_budget),
-    }
