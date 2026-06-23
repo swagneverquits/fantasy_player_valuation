@@ -13,10 +13,10 @@ TRADE_SIDE_COLUMNS = [
     "transaction_id",
     "side_roster_id",
     "completed_date",
-    "player_ids_in_json",
-    "player_ids_out_json",
-    "picks_in_json",
-    "picks_out_json",
+    "player_ids_in",
+    "player_ids_out",
+    "picks_in",
+    "picks_out",
     "faab_in",
     "faab_out",
 ]
@@ -101,12 +101,12 @@ def trade_side_rows(row: sqlite3.Row) -> list[dict[str, Any]]:
             "transaction_id": row["transaction_id"],
             "side_roster_id": side_roster_id,
             "completed_date": completed_date(row["status_updated_at"]),
-            "player_ids_in_json": dumps_json(player_ids_for_roster(adds, side_roster_id)),
-            "player_ids_out_json": dumps_json(player_ids_for_roster(drops, side_roster_id)),
-            "picks_in_json": dumps_json(
+            "player_ids_in": dumps_json(player_ids_for_roster(adds, side_roster_id)),
+            "player_ids_out": dumps_json(player_ids_for_roster(drops, side_roster_id)),
+            "picks_in": dumps_json(
                 pick_tokens_for_roster(draft_picks, "owner_id", side_roster_id)
             ),
-            "picks_out_json": dumps_json(
+            "picks_out": dumps_json(
                 pick_tokens_for_roster(draft_picks, "previous_owner_id", side_roster_id)
             ),
             "faab_in": faab_total_for_roster(waiver_budget, "receiver", side_roster_id),
