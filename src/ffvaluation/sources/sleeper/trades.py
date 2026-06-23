@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import sqlite3
 import time
 from collections.abc import Callable, Iterable
@@ -24,6 +25,25 @@ from ffvaluation.sources.sleeper.common import (
 from ffvaluation.sources.sleeper.discovery import discovery_sqlite_type
 from ffvaluation.sources.sleeper.models import TRADE_HISTORY_COLUMNS, SleeperTradeRow
 from ffvaluation.sources.sleeper.models import LEAGUE_DISCOVERY_COLUMNS
+
+
+TRADE_SIDE_COLUMNS = [
+    "league_id",
+    "transaction_id",
+    "side_roster_id",
+    "created_at",
+    "season",
+    "round",
+    "trade_team_count",
+    "is_multiteam",
+    "player_ids_in_json",
+    "player_ids_out_json",
+    "picks_in_json",
+    "picks_out_json",
+    "faab_in",
+    "faab_out",
+    "processed_at",
+]
 
 
 def fetch_trade_history(
@@ -205,6 +225,135 @@ def copy_trade_sample_leagues_sqlite(
 def sqlite_table_columns(connection: sqlite3.Connection, table: str) -> list[str]:
     """Read column names for an existing SQLite table."""
     return [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
+
+
+def trade_sides_from_sqlite(
+    path: str | Path,
+    *,
+    processed_at: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Build one roster-perspective side row per completed Sleeper trade participant."""
+    processed_at = processed_at or datetime.now(UTC)
+    with sqlite3.connect(path) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT
+                t.league_id,
+                t.transaction_id,
+                t.created_at,
+                t.round,
+                t.roster_ids,
+                t.consenter_ids,
+                t.adds,
+                t.drops,
+                t.draft_picks,
+                t.waiver_budget,
+                l.league_season
+            FROM trades t
+            LEFT JOIN leagues l ON l.league_id = t.league_id
+            ORDER BY t.created_at, t.league_id, t.transaction_id
+            """
+        ).fetchall()
+
+    side_rows: list[dict[str, Any]] = []
+    for row in rows:
+        side_rows.extend(trade_side_rows(row, processed_at=processed_at))
+    return side_rows
+
+
+def trade_sides_dataframe(path: str | Path):
+    """Build a pandas DataFrame of roster-perspective trade side rows."""
+    import pandas as pd
+
+    return pd.DataFrame(trade_sides_from_sqlite(path), columns=TRADE_SIDE_COLUMNS)
+
+
+def trade_side_rows(row: sqlite3.Row, *, processed_at: datetime) -> list[dict[str, Any]]:
+    """Build side rows for one raw trade row."""
+    side_roster_ids = sorted(
+        {
+            int(roster_id)
+            for roster_id in parse_json_value(row["consenter_ids"], [])
+            or parse_json_value(row["roster_ids"], [])
+        }
+    )
+    trade_team_count = len(side_roster_ids)
+    adds = parse_json_value(row["adds"], {}) or {}
+    drops = parse_json_value(row["drops"], {}) or {}
+    draft_picks = parse_json_value(row["draft_picks"], []) or []
+    waiver_budget = parse_json_value(row["waiver_budget"], []) or []
+
+    return [
+        {
+            "league_id": row["league_id"],
+            "transaction_id": row["transaction_id"],
+            "side_roster_id": side_roster_id,
+            "created_at": row["created_at"],
+            "season": row["league_season"],
+            "round": row["round"],
+            "trade_team_count": trade_team_count,
+            "is_multiteam": trade_team_count > 2,
+            "player_ids_in_json": dumps_json(player_ids_for_roster(adds, side_roster_id)),
+            "player_ids_out_json": dumps_json(player_ids_for_roster(drops, side_roster_id)),
+            "picks_in_json": dumps_json(pick_tokens_for_roster(draft_picks, "owner_id", side_roster_id)),
+            "picks_out_json": dumps_json(
+                pick_tokens_for_roster(draft_picks, "previous_owner_id", side_roster_id)
+            ),
+            "faab_in": faab_total_for_roster(waiver_budget, "receiver", side_roster_id),
+            "faab_out": faab_total_for_roster(waiver_budget, "sender", side_roster_id),
+            "processed_at": processed_at.isoformat(),
+        }
+        for side_roster_id in side_roster_ids
+    ]
+
+
+def parse_json_value(value: str | None, fallback: Any) -> Any:
+    """Parse a JSON SQLite value while returning a fallback for blanks/nulls."""
+    if not value:
+        return fallback
+    parsed = json.loads(value)
+    return fallback if parsed is None else parsed
+
+
+def player_ids_for_roster(player_map: dict[str, Any], roster_id: int) -> list[str]:
+    """Return player IDs whose trade payload value matches a roster ID."""
+    return sorted(
+        str(player_id)
+        for player_id, mapped_roster_id in player_map.items()
+        if optional_int(mapped_roster_id) == roster_id
+    )
+
+
+def pick_tokens_for_roster(
+    draft_picks: list[dict[str, Any]],
+    roster_field: str,
+    roster_id: int,
+) -> list[str]:
+    """Return compact pick tokens for picks matching a roster field."""
+    return sorted(
+        pick_token(pick)
+        for pick in draft_picks
+        if optional_int(pick.get(roster_field)) == roster_id
+    )
+
+
+def pick_token(pick: dict[str, Any]) -> str:
+    """Format a draft pick as a compact sortable token."""
+    return f"{pick['season']}-{optional_int(pick['round']):02d}"
+
+
+def faab_total_for_roster(
+    waiver_budget: list[dict[str, Any]],
+    roster_field: str,
+    roster_id: int,
+) -> int:
+    """Sum FAAB amount entries matching a roster field."""
+    return sum(
+        optional_int(entry.get("amount")) or 0
+        for entry in waiver_budget
+        if optional_int(entry.get(roster_field)) == roster_id
+    )
 
 
 def write_trade_history_csv(rows: list[SleeperTradeRow], path: str | Path) -> Path:
