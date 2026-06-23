@@ -44,6 +44,11 @@ def league_users_url(league_id: str) -> str:
     return f"{BASE_URL}/league/{league_id}/users"
 
 
+def league_rosters_url(league_id: str) -> str:
+    """Build the Sleeper league rosters URL."""
+    return f"{BASE_URL}/league/{league_id}/rosters"
+
+
 def transactions_url(league_id: str, round_number: int) -> str:
     """Build the Sleeper league transactions URL for a round."""
     return f"{BASE_URL}/league/{league_id}/transactions/{round_number}"

@@ -22,10 +22,13 @@ from ffvaluation.sources.sleeper import (
     copy_trade_sample_leagues_sqlite,
     copy_trade_sample_players_sqlite,
     expand_user_frontier_sqlite,
+    fetch_roster_sample,
     fetch_trade_sample,
     pull_nfl_players_sqlite,
+    read_sample_league_ids_sqlite,
     sample_league_ids_from_discovery,
     seed_user_frontier,
+    upsert_rosters_sqlite,
     upsert_trade_history_sqlite,
 )
 from ffvaluation.sources.registry import list_sources
@@ -205,6 +208,11 @@ def sample_sleeper_trades(
         "--include-players/--no-players",
         help="Copy player lookup rows for trade add/drop IDs into the sample database.",
     ),
+    include_rosters: bool = typer.Option(
+        True,
+        "--include-rosters/--no-rosters",
+        help="Fetch roster_id to user_id mappings into the sample database.",
+    ),
 ) -> None:
     """Sample completed Sleeper trades from discovered leagues into SQLite."""
 
@@ -225,6 +233,15 @@ def sample_sleeper_trades(
         progress_callback=trade_sample_progress_printer(progress_every),
     )
     upsert_trade_history_sqlite(rows, output)
+    roster_count = 0
+    if include_rosters:
+        roster_rows = fetch_roster_sample(
+            league_ids=league_ids,
+            sleep_seconds=sleep_seconds,
+            progress_callback=roster_sample_progress_printer(progress_every),
+        )
+        upsert_rosters_sqlite(roster_rows, output)
+        roster_count = len(roster_rows)
     copy_trade_sample_leagues_sqlite(
         discovery_db_path=discovery_db_path,
         sample_db_path=output,
@@ -241,7 +258,8 @@ def sample_sleeper_trades(
 
     console.print(
         f"Sampled {len(league_ids)} {season} Sleeper leagues, "
-        f"wrote {len(rows)} completed trades and {player_count} players to {output}"
+        f"wrote {len(rows)} completed trades, {roster_count} rosters, "
+        f"and {player_count} players to {output}"
     )
 
 
@@ -258,6 +276,41 @@ def pull_sleeper_players(
 
     player_count = pull_nfl_players_sqlite(path=output)
     console.print(f"Upserted {player_count} Sleeper NFL players into {output}")
+
+
+@app.command("hydrate-sleeper-sample-rosters")
+def hydrate_sleeper_sample_rosters(
+    sample_db_path: Path = typer.Option(
+        Path("data/sample/sleeper/trades/sample.sqlite"),
+        "--sample-db-path",
+        help="Sleeper sample SQLite database path.",
+    ),
+    sleep_seconds: float = typer.Option(
+        0.1,
+        "--sleep-seconds",
+        help="Delay between Sleeper roster calls.",
+    ),
+    progress_every: int = typer.Option(
+        10,
+        "--progress-every",
+        help="Print progress every N sampled leagues. Use 0 to disable.",
+    ),
+) -> None:
+    """Fetch roster_id to user_id mappings for an existing Sleeper sample DB."""
+
+    league_ids = read_sample_league_ids_sqlite(sample_db_path)
+    if not league_ids:
+        raise typer.BadParameter(f"No leagues found in {sample_db_path}.")
+    roster_rows = fetch_roster_sample(
+        league_ids=league_ids,
+        sleep_seconds=sleep_seconds,
+        progress_callback=roster_sample_progress_printer(progress_every),
+    )
+    upsert_rosters_sqlite(roster_rows, sample_db_path)
+    console.print(
+        f"Hydrated {len(roster_rows)} Sleeper roster rows across "
+        f"{len(league_ids)} leagues into {sample_db_path}"
+    )
 
 
 @app.command("seed-sleeper-network")
@@ -648,6 +701,22 @@ def trade_sample_progress_printer(every: int):
             console.print(
                 f"Sleeper trade sample: {current}/{total} leagues, "
                 f"{trades} trades, latest league {league_id}"
+            )
+
+    return print_progress
+
+
+def roster_sample_progress_printer(every: int):
+    """Build a periodic Sleeper roster sample progress callback."""
+    if every <= 0:
+        return None
+
+    def print_progress(current: int, total: int, rosters: int, league_id: str) -> None:
+        """Print sampled roster ingestion progress."""
+        if current == 1 or current % every == 0 or current == total:
+            console.print(
+                f"Sleeper roster sample: {current}/{total} leagues, "
+                f"{rosters} rosters, latest league {league_id}"
             )
 
     return print_progress

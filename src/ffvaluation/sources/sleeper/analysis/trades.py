@@ -11,6 +11,7 @@ from ffvaluation.sources.sleeper.common import dumps_json, optional_int
 TRADE_SIDE_COLUMNS = [
     "league_id",
     "transaction_id",
+    "user_id",
     "side_roster_id",
     "completed_date",
     "player_ids_in",
@@ -51,11 +52,26 @@ def trade_sides_from_sqlite(path: str | Path) -> list[dict[str, Any]]:
     """Build one roster-perspective side row per completed Sleeper trade participant."""
     with sqlite3.connect(path) as connection:
         connection.row_factory = sqlite3.Row
+        has_rosters = bool(
+            connection.execute(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'rosters'"
+            ).fetchone()[0]
+        )
+        user_id_sql = "r.user_id" if has_rosters else "NULL"
+        roster_join_sql = (
+            "LEFT JOIN rosters r "
+            "ON r.league_id = CAST(t.league_id AS INTEGER) "
+            "AND r.roster_id = side_rosters.value"
+            if has_rosters
+            else ""
+        )
         rows = connection.execute(
-            """
+            f"""
             SELECT
                 t.league_id,
                 t.transaction_id,
+                {user_id_sql} AS user_id,
+                side_rosters.value AS side_roster_id,
                 t.status_updated_at,
                 t.roster_ids,
                 t.consenter_ids,
@@ -64,56 +80,55 @@ def trade_sides_from_sqlite(path: str | Path) -> list[dict[str, Any]]:
                 t.draft_picks,
                 t.waiver_budget
             FROM trades t
-            ORDER BY t.status_updated_at, t.league_id, t.transaction_id
+            JOIN json_each(
+                CASE
+                    WHEN t.consenter_ids IS NULL OR t.consenter_ids IN ('null', '[]')
+                    THEN t.roster_ids
+                    ELSE t.consenter_ids
+                END
+            ) side_rosters
+            {roster_join_sql}
+            ORDER BY t.status_updated_at, t.league_id, t.transaction_id, side_rosters.value
             """
         ).fetchall()
 
-    side_rows: list[dict[str, Any]] = []
-    for row in rows:
-        side_rows.extend(trade_side_rows(row))
-    return side_rows
+    return [trade_side_row(row) for row in rows]
 
 
 def trade_sides_dataframe(path: str | Path):
     """Build a pandas DataFrame of roster-perspective trade side rows."""
     import pandas as pd
 
-    return pd.DataFrame(trade_sides_from_sqlite(path), columns=TRADE_SIDE_COLUMNS)
+    dataframe = pd.DataFrame(trade_sides_from_sqlite(path), columns=TRADE_SIDE_COLUMNS)
+    for column in ["league_id", "transaction_id", "side_roster_id"]:
+        dataframe[column] = dataframe[column].astype("int64")
+    dataframe["user_id"] = dataframe["user_id"].astype("Int64")
+    return dataframe
 
 
-def trade_side_rows(row: sqlite3.Row) -> list[dict[str, Any]]:
-    """Build side rows for one raw trade row."""
-    side_roster_ids = sorted(
-        {
-            int(roster_id)
-            for roster_id in parse_json_value(row["consenter_ids"], [])
-            or parse_json_value(row["roster_ids"], [])
-        }
-    )
+def trade_side_row(row: sqlite3.Row) -> dict[str, Any]:
+    """Build one side row for one raw trade participant."""
+    side_roster_id = required_int(row["side_roster_id"])
     adds = parse_json_value(row["adds"], {}) or {}
     drops = parse_json_value(row["drops"], {}) or {}
     draft_picks = parse_json_value(row["draft_picks"], []) or []
     waiver_budget = parse_json_value(row["waiver_budget"], []) or []
 
-    return [
-        {
-            "league_id": row["league_id"],
-            "transaction_id": row["transaction_id"],
-            "side_roster_id": side_roster_id,
-            "completed_date": completed_date(row["status_updated_at"]),
-            "player_ids_in": dumps_json(player_ids_for_roster(adds, side_roster_id)),
-            "player_ids_out": dumps_json(player_ids_for_roster(drops, side_roster_id)),
-            "picks_in": dumps_json(
-                pick_tokens_for_roster(draft_picks, "owner_id", side_roster_id)
-            ),
-            "picks_out": dumps_json(
-                pick_tokens_for_roster(draft_picks, "previous_owner_id", side_roster_id)
-            ),
-            "faab_in": faab_total_for_roster(waiver_budget, "receiver", side_roster_id),
-            "faab_out": faab_total_for_roster(waiver_budget, "sender", side_roster_id),
-        }
-        for side_roster_id in side_roster_ids
-    ]
+    return {
+        "league_id": required_int(row["league_id"]),
+        "transaction_id": required_int(row["transaction_id"]),
+        "user_id": optional_int(row["user_id"]),
+        "side_roster_id": side_roster_id,
+        "completed_date": completed_date(row["status_updated_at"]),
+        "player_ids_in": dumps_json(player_ids_for_roster(adds, side_roster_id)),
+        "player_ids_out": dumps_json(player_ids_for_roster(drops, side_roster_id)),
+        "picks_in": dumps_json(pick_tokens_for_roster(draft_picks, "owner_id", side_roster_id)),
+        "picks_out": dumps_json(
+            pick_tokens_for_roster(draft_picks, "previous_owner_id", side_roster_id)
+        ),
+        "faab_in": faab_total_for_roster(waiver_budget, "receiver", side_roster_id),
+        "faab_out": faab_total_for_roster(waiver_budget, "sender", side_roster_id),
+    }
 
 
 def completed_date(value: str | None) -> str:
@@ -127,6 +142,14 @@ def parse_json_value(value: str | None, fallback: Any) -> Any:
         return fallback
     parsed = json.loads(value)
     return fallback if parsed is None else parsed
+
+
+def required_int(value: Any) -> int:
+    """Parse a required integer value."""
+    parsed = optional_int(value)
+    if parsed is None:
+        raise ValueError("Expected a non-null integer value.")
+    return parsed
 
 
 def player_ids_for_roster(player_map: dict[str, Any], roster_id: int) -> list[str]:
