@@ -32,6 +32,7 @@ from ffvaluation.sources.sleeper import (
     upsert_trade_history_sqlite,
 )
 from ffvaluation.sources.registry import list_sources
+from ffvaluation.sources.sleeper.fetch.ingestion import ingest_sleeper_trades
 
 app = typer.Typer(no_args_is_help=True)
 console = Console()
@@ -310,6 +311,55 @@ def hydrate_sleeper_sample_rosters(
     console.print(
         f"Hydrated {len(roster_rows)} Sleeper roster rows across "
         f"{len(league_ids)} leagues into {sample_db_path}"
+    )
+
+
+@app.command("pull-sleeper-trades")
+def pull_sleeper_trades(
+    discovery_db_path: Path = typer.Option(
+        Path("data/raw/sleeper/discovery/discovery.sqlite"),
+        "--discovery-db-path",
+        help="Sleeper discovery SQLite database path.",
+    ),
+    output: Path = typer.Option(
+        Path("data/raw/sleeper/trades/2025.sqlite"),
+        "--output",
+        "-o",
+        help="Raw trade SQLite output path.",
+    ),
+    season: str = typer.Option("2025", "--season", help="Sleeper season to ingest."),
+    min_rosters: int = typer.Option(8, "--min-rosters", help="Minimum league size."),
+    max_rosters: int = typer.Option(16, "--max-rosters", help="Maximum league size."),
+    first_round: int = typer.Option(1, "--first-round", help="First transaction round."),
+    last_round: int = typer.Option(18, "--last-round", help="Last transaction round."),
+    max_leagues: int | None = typer.Option(None, "--max-leagues", help="Pilot league cap."),
+    workers: int = typer.Option(10, "--workers", help="Concurrent league workers."),
+    requests_per_minute: int = typer.Option(
+        1000, "--requests-per-minute", help="Shared Sleeper request throttle."
+    ),
+    progress_every: int = typer.Option(
+        100, "--progress-every", help="Print progress every N rounds."
+    ),
+) -> None:
+    """Pull completed Sleeper trades into resumable raw SQLite."""
+    result = ingest_sleeper_trades(
+        discovery_db_path=str(discovery_db_path),
+        output_path=str(output),
+        season=season,
+        min_rosters=min_rosters,
+        max_rosters=max_rosters,
+        first_round=first_round,
+        last_round=last_round,
+        max_leagues=max_leagues,
+        workers=workers,
+        requests_per_minute=requests_per_minute,
+        progress_every=progress_every,
+        progress_callback=trade_ingestion_progress_printer(progress_every),
+    )
+    console.print(
+        f"Processed {result['leagues']} leagues and {result['work_items']} rounds; "
+        f"completed {result['completed']}, failed {result['failed']}, "
+        f"wrote {result['trades']} trades to {output}"
     )
 
 
@@ -686,6 +736,28 @@ def progress_printer(every: int):
         """Print periodic current-total progress."""
         if current == 1 or current % every == 0 or current == total:
             console.print(f"RosterAudit history: {current}/{total} {status}")
+
+    return print_progress
+
+
+def trade_ingestion_progress_printer(every: int):
+    """Build periodic raw trade ingestion progress output."""
+    if every <= 0:
+        return None
+
+    def print_progress(
+        processed: int,
+        total: int,
+        completed: int,
+        failed: int,
+        trades: int,
+    ) -> None:
+        """Print raw trade ingestion progress."""
+        if processed == 1 or processed % every == 0 or processed == total:
+            console.print(
+                f"Sleeper raw trades: {processed}/{total} rounds, "
+                f"completed={completed}, failed={failed}, trades={trades}"
+            )
 
     return print_progress
 
