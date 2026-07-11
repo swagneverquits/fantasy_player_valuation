@@ -7,6 +7,7 @@ from ffvaluation.sources.sleeper.fetch.discovery import (
     seed_user_frontier,
 )
 from ffvaluation.sources.sleeper.fetch.players import fetch_nfl_players
+from ffvaluation.sources.sleeper.fetch.ingestion import ingest_sleeper_trades
 from ffvaluation.sources.sleeper.fetch.rosters import fetch_league_rosters, fetch_roster_sample
 from ffvaluation.sources.sleeper.fetch.trades import (
     fetch_trade_history,
@@ -20,6 +21,7 @@ __all__ = [
     "SleeperDiscoveryStore",
     "expand_user_frontier_sqlite",
     "fetch_nfl_players",
+    "ingest_sleeper_trades",
     "fetch_league_rosters",
     "fetch_roster_sample",
     "fetch_trade_history",

@@ -105,18 +105,24 @@ def pending_trade_fetch_work(
     last_round: int = 18,
 ) -> dict[str, list[int]]:
     """Read incomplete league-round work grouped by league."""
-    placeholders = ", ".join("?" for _ in league_ids)
+    if len(league_ids) <= 900:
+        placeholders = ", ".join("?" for _ in league_ids)
+        league_filter = f"league_id IN ({placeholders})"
+        parameters = (*league_ids, first_round, last_round)
+    else:
+        league_filter = "1 = 1"
+        parameters = (first_round, last_round)
     with sqlite3.connect(path) as connection:
         rows = connection.execute(
             f"""
             SELECT league_id, round
             FROM trade_fetch_state
-            WHERE league_id IN ({placeholders})
+            WHERE {league_filter}
               AND round BETWEEN ? AND ?
               AND status <> 'complete'
             ORDER BY league_id, round
             """,
-            (*league_ids, first_round, last_round),
+            parameters,
         ).fetchall()
     work: dict[str, list[int]] = {}
     for league_id, round_number in rows:

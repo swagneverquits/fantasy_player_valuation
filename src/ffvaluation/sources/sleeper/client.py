@@ -13,6 +13,7 @@ from ffvaluation.sources.sleeper.fetch.discovery import (
     seed_user_frontier,
 )
 from ffvaluation.sources.sleeper.fetch.players import fetch_nfl_players
+from ffvaluation.sources.sleeper.fetch.ingestion import ingest_sleeper_trades
 from ffvaluation.sources.sleeper.fetch.rosters import fetch_league_rosters, fetch_roster_sample
 from ffvaluation.sources.sleeper.fetch.trades import (
     fetch_trade_history,
@@ -60,6 +61,7 @@ __all__ = [
     "copy_trade_sample_players_sqlite",
     "fetch_trade_history",
     "fetch_trade_sample",
+    "ingest_sleeper_trades",
     "fetch_league_rosters",
     "fetch_nfl_players",
     "fetch_roster_sample",
